@@ -8,8 +8,26 @@ from .tools.gap_analyzer import (
     format_gap_report,
     parse_gap_analysis,
 )
+from .tools.market import (
+    build_market_search_prompt,
+    format_market_results,
+    search_market_data,
+)
 from .tools.plan_importer import compare_plans, format_diff_report, parse_plan_file
+from .tools.progress import (
+    build_checkin_prompt,
+    format_checkin_report,
+    format_progress_overview,
+    parse_checkin_response,
+    save_checkin,
+)
 from .tools.roadmap import build_roadmap_prompt, format_roadmap, parse_roadmap
+from .tools.schedule import (
+    build_schedule_prompt,
+    format_schedule,
+    generate_ics,
+    parse_schedule,
+)
 from .tools.profile import (
     get_plan_history,
     load_profile,
@@ -286,35 +304,228 @@ def save_roadmap(roadmap_json: str) -> str:
 
 @mcp.tool()
 def generate_schedule(scope: str = "this_week") -> str:
-    """将路线图拆解为具体日程。
+    """将路线图拆解为每日时间块日程表。
+
+    特点：
+    - 时间块（time-block）排程，每天不超过 8 小时
+    - 高优先级任务排前面
+    - 每隔 3 天安排复习日（间隔复习）
+    - 支持导出 ICS 日历文件
 
     Args:
-        scope: 范围，可选 today / this_week / this_month，或某个阶段 id
+        scope: 范围，可选 today / this_week / this_month
+
+    必须先生成路线图（generate_roadmap + save_roadmap）。
     """
-    # TODO: 读取 plan，输出日程，可选导出 ICS
-    return f"「{scope}」的日程已生成。"
+    profile = load_profile()
+
+    if not profile.plan or not profile.plan.get("roadmap"):
+        return "错误：请先调用 generate_roadmap 生成路线图，再生成日程。"
+
+    # SOP 驱动的日程生成
+    prompt, metadata = build_schedule_prompt(profile, scope)
+
+    # 构建中间输出
+    steps_info = []
+    if metadata.get("schedule_sop"):
+        steps_info.append(f"📅 日程 SOP（v{metadata['schedule_sop']['version']}）")
+        for step in metadata["schedule_sop"]["steps"]:
+            steps_info.append(f"  ✓ {step['name']}")
+
+    steps_text = "\n".join(steps_info)
+
+    return (
+        f"【日程生成任务】\n\n"
+        f"范围：{scope}\n"
+        f"已执行以下 SOP 步骤：\n{steps_text}\n\n"
+        f"{'=' * 50}\n\n"
+        f"{prompt}\n\n"
+        f"{'=' * 50}\n\n"
+        "请基于以上信息生成日程表，然后调用 save_schedule(schedule_json) 保存结果。\n"
+        "如需导出 ICS 日历文件，请在保存后调用 export_ics。"
+    )
+
+
+@mcp.tool()
+def save_schedule(schedule_json: str) -> str:
+    """保存日程表到档案。
+
+    Args:
+        schedule_json: 日程表的 JSON 字符串
+    """
+    import json
+
+    try:
+        schedule_data = json.loads(schedule_json)
+        if not isinstance(schedule_data, dict):
+            return "错误：日程表必须是 JSON 对象格式"
+    except json.JSONDecodeError:
+        return "错误：无法解析日程表 JSON"
+
+    profile = load_profile()
+
+    # 解析并写入 plan
+    parsed = parse_schedule(json.dumps(schedule_data, ensure_ascii=False))
+    profile.plan["schedule"] = parsed.get("schedule", parsed)
+    profile.touch()
+    save_profile(profile)
+
+    # 格式化报告
+    report = format_schedule(parsed)
+
+    return (
+        f"日程表已保存。\n\n{report}\n\n"
+        "如需导出 ICS 日历文件，请调用 export_ics。\n"
+        "开始执行后，请调用 track_progress 记录进度。"
+    )
+
+
+@mcp.tool()
+def export_ics(start_date: str = "") -> str:
+    """导出日程为 ICS 日历文件。
+
+    Args:
+        start_date: 起始日期（YYYY-MM-DD），为空则从今天开始
+    """
+    import tempfile
+    from pathlib import Path
+
+    profile = load_profile()
+
+    schedule = profile.plan.get("schedule")
+    if not schedule:
+        return "错误：请先调用 generate_schedule 生成日程。"
+
+    # 生成 ICS
+    ics_content = generate_ics({"schedule": schedule}, start_date)
+
+    # 写入临时文件
+    ics_path = Path(tempfile.gettempdir()) / "career_kit_schedule.ics"
+    ics_path.write_text(ics_content, encoding="utf-8")
+
+    return (
+        f"ICS 文件已生成：{ics_path}\n\n"
+        "可以导入到 Google Calendar / Outlook / Apple Calendar 等日历应用。\n"
+        "开始执行后，请调用 track_progress 记录进度。"
+    )
 
 
 @mcp.tool()
 def track_progress(report: str) -> str:
-    """记录进度，自动调整后续计划。
+    """记录进度签到，分析偏差，自动调整后续计划。
+
+    签到模式（借鉴 Plan Tracker MCP）：
+    - 完成了什么任务
+    - 花了多少时间
+    - 遇到什么阻碍
+    - 当前士气
+
+    支持：
+    - 偏差分析：实际进度 vs 计划进度
+    - 自动重排：落后时建议调整方案
+    - 进度可视化：进度条 + 里程碑状态
 
     Args:
-        report: 用户完成的内容，自然语言
+        report: 用户的进度汇报（自然语言）
     """
-    # TODO: 更新 plan，写入日志，重新计算日程
-    return f"进度已记录：{report}"
+    profile = load_profile()
+
+    if not profile.plan:
+        return "错误：请先生成路线图和日程。"
+
+    # 构建签到分析 prompt
+    prompt = build_checkin_prompt(profile, report)
+
+    return (
+        f"【进度签到任务】\n\n"
+        f"{'=' * 50}\n\n"
+        f"{prompt}\n\n"
+        f"{'=' * 50}\n\n"
+        "请分析用户的进度汇报，然后调用 save_checkin(checkin_json) 保存结果。"
+    )
+
+
+@mcp.tool()
+def save_checkin(checkin_json: str) -> str:
+    """保存签到记录。
+
+    Args:
+        checkin_json: 签到分析的 JSON 字符串
+    """
+    import json
+
+    try:
+        checkin_data = json.loads(checkin_json)
+        if not isinstance(checkin_data, dict):
+            return "错误：签到数据必须是 JSON 对象格式"
+    except json.JSONDecodeError:
+        return "错误：无法解析签到 JSON"
+
+    profile = load_profile()
+    profile = save_checkin(profile, checkin_data)
+    save_profile(profile)
+
+    # 格式化报告
+    report = format_checkin_report(checkin_data)
+
+    # 如果需要调整计划
+    adjustments = checkin_data.get("adjustments", {})
+    if adjustments.get("needed"):
+        report += "\n\n⚠️ 检测到计划需要调整。建议调用 generate_schedule 重新生成日程。"
+
+    return (
+        f"签到已保存。\n\n{report}\n\n"
+        "继续加油！下次签到请调用 track_progress。"
+    )
+
+
+@mcp.tool()
+def view_progress() -> str:
+    """查看整体进度概览。"""
+    profile = load_profile()
+
+    if not profile.plan:
+        return "暂无计划，请先生成路线图。"
+
+    return format_progress_overview(profile)
 
 
 @mcp.tool()
 def search_market(query: str) -> str:
     """搜索就业市场信息。
 
+    搜索类型自动推断：
+    - 面试相关 → 搜索面经
+    - 薪资相关 → 搜索薪资数据
+    - JD 相关 → 搜索岗位要求
+    - 其他 → 市场趋势
+
+    数据来源（按优先级）：
+    1. 本地知识库（dev/knowledge/market/）
+    2. LLM 知识（兜底）
+    3. Web Search API（TODO: 后续接入）
+
     Args:
         query: 搜索内容——岗位名称、公司、薪资、面试经验等
     """
-    # TODO: web search，格式化结果
-    return f"市场搜索结果：{query}"
+    # 搜索数据
+    search_results = search_market_data(query)
+
+    # 构建 LLM prompt
+    prompt = build_market_search_prompt(query, search_results)
+
+    # 数据来源提示
+    source_info = ""
+    if search_results["has_local_data"]:
+        source_info = "（已找到本地参考数据）"
+    else:
+        source_info = "（基于 LLM 知识回答）"
+
+    return (
+        f"【市场搜索】{query} {source_info}\n\n"
+        f"{prompt}\n\n"
+        "请基于以上信息回答用户的问题。"
+    )
 
 
 @mcp.tool()
