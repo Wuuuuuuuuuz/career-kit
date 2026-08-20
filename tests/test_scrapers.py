@@ -105,7 +105,19 @@ def test_config_loading():
 
     scrapers = list_scrapers()
     assert isinstance(scrapers, list)
+    assert len(scrapers) >= 1, "至少应有 1 个 Scraper"
     print(f"[OK] 已注册 {len(scrapers)} 个 Scraper")
+
+    # 验证 bytedance 已注册
+    ids = [s["id"] for s in scrapers]
+    assert "bytedance" in ids, "bytedance 未注册"
+    print(f"[OK] bytedance 已注册")
+
+    # 验证参数定义
+    bd = next(s for s in scrapers if s["id"] == "bytedance")
+    assert "keyword" in bd["params"]
+    assert "city" in bd["params"]
+    print(f"[OK] bytedance 参数定义正确")
     print()
 
 

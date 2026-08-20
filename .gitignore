@@ -7,3 +7,4 @@ build/
 *.egg
 .env
 dev/
+src/scrapers/*/cache/

@@ -51,7 +51,12 @@ def _load_scraper_class(company: str) -> type[CompanyScraper] | None:
         return None
 
     try:
-        module = importlib.import_module(module_path)
+        # 支持相对路径（相对于 src/scrapers/）和绝对路径
+        if not module_path.startswith("src."):
+            full_path = f"src.scrapers.{module_path}" if module_path else ""
+        else:
+            full_path = module_path
+        module = importlib.import_module(full_path)
         cls = getattr(module, class_name)
         if not issubclass(cls, CompanyScraper):
             return None

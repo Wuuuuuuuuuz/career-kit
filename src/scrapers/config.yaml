@@ -13,16 +13,24 @@
 #   params: 支持的搜索参数（可选，供 LLM 参考）
 
 scrapers:
-  # 示例：字节跳动（待实现）
-  # bytedance:
-  #   name: 字节跳动
-  #   module: scrapers.bytedance
-  #   class: Scraper
-  #   description: 字节跳动官方招聘
-  #   params:
-  #     keyword:
-  #       description: 岗位关键词
-  #       required: true
-  #     city:
-  #       description: 城市
-  #       required: false
+  bytedance:
+    name: 字节跳动
+    module: bytedance.scraper
+    class: Scraper
+    description: 字节跳动官方招聘（jobs.bytedance.com），支持社招/校招
+    params:
+      keyword:
+        description: 搜索关键词（如 "Python"、"AI Agent"）
+        required: false
+      city:
+        description: 城市名（如 "北京"、"上海"、"深圳"）
+        required: false
+      job_type:
+        description: 岗位类别（研发/运营/产品/销售/设计/市场/游戏策划/教研教学）
+        required: false
+      portal:
+        description: "experienced=社招(默认), campus=校招"
+        required: false
+      limit:
+        description: 返回数量上限，默认 20
+        required: false
