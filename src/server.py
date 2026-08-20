@@ -2,7 +2,14 @@
 
 from mcp.server.fastmcp import FastMCP
 
+from .tools.gap_analyzer import (
+    build_gap_analysis_prompt,
+    build_sop_analysis_prompt,
+    format_gap_report,
+    parse_gap_analysis,
+)
 from .tools.plan_importer import compare_plans, format_diff_report, parse_plan_file
+from .tools.roadmap import build_roadmap_prompt, format_roadmap, parse_roadmap
 from .tools.profile import (
     get_plan_history,
     load_profile,
@@ -93,17 +100,188 @@ def _summarize_dict(d: dict) -> str:
 
 
 @mcp.tool()
+def import_jd(jd_text: str) -> str:
+    """导入目标岗位的 JD（职位描述）。
+
+    Args:
+        jd_text: JD 文本内容
+    """
+    # TODO: 后续支持从 URL 解析 JD
+    # TODO: 后续支持从文件导入 JD
+
+    # 将 JD 存储到 profile 的 target_jd 字段
+    # LLM 应该先解析 JD 再调用此工具，所以这里直接存储
+    profile = load_profile()
+
+    # 如果 jd_text 是 JSON，直接存储；否则存为 raw
+    import json
+    try:
+        jd_data = json.loads(jd_text)
+        if not isinstance(jd_data, dict):
+            jd_data = {"raw": jd_text}
+    except json.JSONDecodeError:
+        jd_data = {"raw": jd_text}
+
+    profile.target_jd = jd_data
+    profile.touch()
+    save_profile(profile)
+
+    return (
+        f"已导入目标 JD。当前档案版本：v{profile.version}\n\n"
+        "请调用 analyze_gaps 开始差距分析。"
+    )
+
+
+@mcp.tool()
 def analyze_gaps() -> str:
-    """对比现状（have）与目标（want），搜索市场数据，写入差距分析。"""
-    # TODO: 读取档案，web search，写入 gap section
-    return "差距分析完成，接下来运行 generate_roadmap 生成路线图。"
+    """对比现状（have）与目标（want/target_jd），输出差距分析。
+
+    使用 SOP 驱动的 RAG 模式：
+    1. 加载 SOP 配置（简历过筛 + 面试通过）
+    2. 按步骤执行：构建画像 → 检索数据 → 差异分析 → 构建建议
+    3. 返回完整 prompt 让 LLM 分析
+
+    中间步骤会展示给用户，让用户看到分析过程。
+    """
+    profile = load_profile()
+
+    if not profile.have and not profile.want:
+        return "错误：档案中缺少 have（现状）或 want（目标）信息。请先调用 intake 填充。"
+
+    # SOP 驱动的分析
+    prompt, metadata = build_sop_analysis_prompt(profile)
+
+    # 构建中间输出（让用户看到 SOP 步骤）
+    steps_info = []
+    if metadata.get("resume_sop"):
+        steps_info.append(f"📋 简历过筛 SOP（v{metadata['resume_sop']['version']}）")
+        for step in metadata["resume_sop"]["steps"]:
+            steps_info.append(f"  ✓ {step['name']}")
+
+    if metadata.get("interview_sop"):
+        steps_info.append(f"🎯 面试通过 SOP（v{metadata['interview_sop']['version']}）")
+        for step in metadata["interview_sop"]["steps"]:
+            steps_info.append(f"  ✓ {step['name']}")
+
+    steps_text = "\n".join(steps_info)
+
+    return (
+        f"【差距分析任务】\n\n"
+        f"已执行以下 SOP 步骤：\n{steps_text}\n\n"
+        f"{'=' * 50}\n\n"
+        f"{prompt}\n\n"
+        f"{'=' * 50}\n\n"
+        "请基于以上信息进行分析，然后调用 save_gap_analysis(gap_json) 保存结果。"
+    )
+
+
+@mcp.tool()
+def save_gap_analysis(gap_json: str) -> str:
+    """保存差距分析结果。
+
+    Args:
+        gap_json: 差距分析的 JSON 字符串
+    """
+    import json
+
+    try:
+        gap_data = json.loads(gap_json)
+        if not isinstance(gap_data, dict):
+            return "错误：差距分析必须是 JSON 对象格式"
+    except json.JSONDecodeError:
+        return "错误：无法解析差距分析 JSON"
+
+    profile = load_profile()
+    profile.gap = gap_data
+    profile.touch()
+    save_profile(profile)
+
+    # 格式化报告
+    report = format_gap_report(gap_data)
+
+    return (
+        f"差距分析已保存。\n\n{report}\n\n"
+        "接下来可以调用 generate_roadmap 生成路线图。"
+    )
 
 
 @mcp.tool()
 def generate_roadmap() -> str:
-    """基于差距分析生成分阶段职业路线图，考虑用户可用时间和截止日期。"""
-    # TODO: 读取 gap + 可用时间，写入 plan section
-    return "路线图已生成，运行 generate_schedule 获取具体日程。"
+    """基于差距分析生成分阶段职业路线图。
+
+    使用 SOP 驱动：
+    1. 从差距分析中提取需要弥补的技能和经验
+    2. LLM 动态设计阶段（learn/project/intern/research）
+    3. 每阶段设定量化 KPI + 简历价值
+    4. 拆成里程碑和每日任务
+
+    必须先完成差距分析（analyze_gaps + save_gap_analysis）。
+    """
+    profile = load_profile()
+
+    if not profile.gap:
+        return "错误：请先调用 analyze_gaps 完成差距分析，再生成路线图。"
+
+    # SOP 驱动的路线图生成
+    prompt, metadata = build_roadmap_prompt(profile)
+
+    # 构建中间输出
+    steps_info = []
+    if metadata.get("roadmap_sop"):
+        steps_info.append(f"🗺️ 路线图 SOP（v{metadata['roadmap_sop']['version']}）")
+        for step in metadata["roadmap_sop"]["steps"]:
+            steps_info.append(f"  ✓ {step['name']}")
+
+    steps_text = "\n".join(steps_info)
+
+    return (
+        f"【路线图生成任务】\n\n"
+        f"已执行以下 SOP 步骤：\n{steps_text}\n\n"
+        f"{'=' * 50}\n\n"
+        f"{prompt}\n\n"
+        f"{'=' * 50}\n\n"
+        "请基于以上信息生成路线图，然后调用 save_roadmap(roadmap_json) 保存结果。"
+    )
+
+
+@mcp.tool()
+def save_roadmap(roadmap_json: str) -> str:
+    """保存路线图到档案。
+
+    Args:
+        roadmap_json: 路线图的 JSON 字符串
+    """
+    import json
+
+    try:
+        roadmap_data = json.loads(roadmap_json)
+        if not isinstance(roadmap_data, dict):
+            return "错误：路线图必须是 JSON 对象格式"
+    except json.JSONDecodeError:
+        return "错误：无法解析路线图 JSON"
+
+    profile = load_profile()
+
+    # 保存旧版本快照
+    if profile.plan:
+        save_plan_snapshot(source="before_roadmap")
+
+    # 解析并写入 plan
+    parsed = parse_roadmap(json.dumps(roadmap_data, ensure_ascii=False))
+    profile.plan = parsed
+    profile.touch()
+    save_profile(profile)
+
+    # 保存新版本快照
+    save_plan_snapshot(source="roadmap_generated")
+
+    # 格式化报告
+    report = format_roadmap(parsed)
+
+    return (
+        f"路线图已保存。\n\n{report}\n\n"
+        "接下来可以调用 generate_schedule 获取具体日程。"
+    )
 
 
 @mcp.tool()

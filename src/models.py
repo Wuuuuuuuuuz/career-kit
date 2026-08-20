@@ -36,6 +36,9 @@ class CareerProfile(BaseModel):
     gap: dict[str, Any] = Field(default_factory=dict, description="差距是什么")
     plan: dict[str, Any] = Field(default_factory=dict, description="怎么走")
 
+    # TODO: 后续扩展 - 支持多个目标 JD 对比
+    target_jd: dict[str, Any] = Field(default_factory=dict, description="目标岗位 JD 解析结果")
+
     plan_history: list[PlanVersion] = Field(default_factory=list, description="计划版本历史")
 
     summary: str = ""

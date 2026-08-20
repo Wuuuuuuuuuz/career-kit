@@ -1,0 +1,140 @@
+# 路线图生成 SOP
+# 目标：基于差距分析生成分阶段职业路线图，宏观到阶段，微观到天
+
+name: 路线图生成
+version: "1.0"
+description: 从差距分析出发，生成可执行的分阶段路线图，每阶段有量化指标和简历价值
+
+steps:
+  - id: analyze_gap_for_roadmap
+    name: 分析差距 → 规划输入
+    description: 从差距分析中提取需要弥补的技能和经验，作为路线图的输入
+    prompt_template: |
+      你是一个资深的职业规划师。
+
+      ## 差距分析结果
+      {gap_summary}
+
+      ## 用户现状
+      {user_have}
+
+      ## 用户目标
+      {user_want}
+
+      请分析并输出：
+      1. **需要弥补的技能**（按优先级排序）
+      2. **需要创造的经历**（项目/实习/研究等）
+      3. **时间约束**（用户可用时间、deadline）
+      4. **起点评估**（用户当前水平，从哪里开始）
+
+      输出 JSON：
+      {{
+        "skills_to_learn": [
+          {{"skill": "技能名", "priority": "high/medium/low", "current_level": "当前水平", "target_level": "目标水平", "estimated_effort": "预估投入（如：2周/1个月）"}}
+        ],
+        "experiences_to_create": [
+          {{"experience": "经历类型", "why": "为什么需要", "how": "怎么创造"}}
+        ],
+        "time_constraint": {{
+          "available_time": "用户可用时间描述",
+          "deadline": "截止日期（如有）",
+          "total_weeks": 0
+        }},
+        "starting_point": "用户当前水平总结"
+      }}
+    output_fields:
+      - gap_for_roadmap
+
+  - id: design_roadmap
+    name: 设计路线图
+    description: LLM 动态设计阶段划分、KPI、里程碑、每日任务
+    prompt_template: |
+      你是一个资深的职业规划师和执行力教练。
+
+      ## 需要弥补的技能
+      {gap_for_roadmap}
+
+      ## 用户现状
+      {user_have}
+
+      ## 用户目标
+      {user_want}
+
+      请设计一份详细的路线图。
+
+      ## 阶段类型说明
+      每个阶段必须属于以下类型之一：
+
+      **learn（学习技能）** — 锻炼底层基础
+      - 刷题、学框架、考认证、看文档、跟教程
+      - resume_value 通常为空（除非是权威认证）
+      - 是其他三个阶段的前置能力基础
+
+      **project（做项目）** — 落简历
+      - 独立项目、开源贡献（给优质项目提 PR 被合并）、参加黑客马拉松、写技术博客
+      - 必须有 resume_value：项目名 + 量化成果
+
+      **intern（实习）** — 落简历
+      - 公司实习、远程实习、兼职
+      - 必须有 resume_value：公司 + 岗位 + 具体贡献
+
+      **research（研究）** — 落简历
+      - 发论文、做课题、参与实验室项目
+      - 必须有 resume_value：论文/成果 + 发表 venue
+
+      ## 设计原则
+      1. 阶段顺序由你根据实际情况决定，没有固定模式
+      2. learn 阶段通常在最前面，为后续阶段打基础
+      3. 每个阶段必须有**量化指标**（KPI），可衡量是否达成
+      4. project/intern/research 阶段必须有 **resume_value**（如何写到简历上）
+      5. 每个阶段拆成 2-3 个**里程碑**（milestone）
+      6. 每个里程碑拆成具体**任务**（task），粒度到天
+      7. 任务时间估算要现实，考虑用户的基础水平
+      8. 善于建议有价值的活动：开源 PR、黑客马拉松、技术博客等，都归入合适的类型
+
+      请严格输出以下 JSON 格式：
+      ```json
+      {{
+        "total_duration": "X个月",
+        "strategy_summary": "整体策略说明（一段话）",
+        "phases": [
+          {{
+            "id": "phase_1",
+            "type": "learn|project|intern|research",
+            "name": "阶段名称",
+            "duration": "第X-Y周",
+            "goal": "阶段目标（一句话）",
+            "kpi": {{
+              "metric": "量化指标描述",
+              "target": "目标值（如：200道、1篇、上线）",
+              "evidence": "如何验证达成（如：LeetCode提交记录、论文录用通知）"
+            }},
+            "resume_value": "这个阶段产出如何写到简历上（learn类型可为空字符串）",
+            "milestones": [
+              {{
+                "id": "m1",
+                "name": "里程碑名称",
+                "duration": "第X-Y周",
+                "tasks": [
+                  {{
+                    "task": "具体任务描述",
+                    "time": "时间估算（如：3天、1周）",
+                    "priority": "high|medium|low"
+                  }}
+                ],
+                "deliverable": "交付物（如：能独立写一个Agent、完成50道LeetCode）",
+                "done_criteria": "完成标准（如：能不看文档写出来、通过所有测试）"
+              }}
+            ]
+          }}
+        ]
+      }}
+      ```
+
+      注意：
+      - phases 数组的顺序就是执行顺序
+      - 每个 task 的粒度要落到"一天内可完成"的级别
+      - KPI 必须是可量化的，不能是"学会"这种模糊表述
+      - resume_value 要具体到简历上怎么写（如："独立开发 RAG 系统，支持 10 种文档格式，GitHub 50+ star"）
+    output_fields:
+      - roadmap
