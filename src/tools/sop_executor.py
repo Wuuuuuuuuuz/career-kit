@@ -140,10 +140,22 @@ def execute_sop(
                 query = ""
                 step_info["skipped_reason"] = "依赖前序步骤输出，将在完整流程中执行"
 
-            # TODO: 检索结果目前为空骨架，后续接入实际数据源
-            # search_result = router.search(query, step["data_source"], search_paths)
-            step_info["data_source_query"] = query
-            step_info["local_search_paths"] = search_paths or []
+            # 检索数据
+            if query:
+                search_result = router.search(query, step["data_source"], search_paths)
+                step_info["data_source_query"] = query
+                step_info["local_search_paths"] = search_paths or []
+                step_info["search_results"] = search_result.get("results", [])
+                step_info["has_local_data"] = search_result.get("has_local", False)
+                # 将检索结果注入上下文，供后续 prompt 使用
+                if search_result.get("results"):
+                    context[f"{step['id']}_data"] = "\n".join(
+                        r.get("content", "")[:500] for r in search_result["results"][:3]
+                    )
+            else:
+                step_info["data_source_query"] = ""
+                step_info["local_search_paths"] = search_paths or []
+                step_info["skipped_reason"] = step_info.get("skipped_reason", "查询为空")
 
         # 构建 prompt
         if step.get("prompt_template"):

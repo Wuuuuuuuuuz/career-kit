@@ -124,9 +124,6 @@ def import_jd(jd_text: str) -> str:
     Args:
         jd_text: JD 文本内容
     """
-    # TODO: 后续支持从 URL 解析 JD
-    # TODO: 后续支持从文件导入 JD
-
     # 将 JD 存储到 profile 的 target_jd 字段
     # LLM 应该先解析 JD 再调用此工具，所以这里直接存储
     profile = load_profile()
@@ -147,6 +144,27 @@ def import_jd(jd_text: str) -> str:
     return (
         f"已导入目标 JD。当前档案版本：v{profile.version}\n\n"
         "请调用 analyze_gaps 开始差距分析。"
+    )
+
+
+@mcp.tool()
+def import_jd_file(file_path: str) -> str:
+    """从文件导入目标岗位的 JD（职位描述）。支持 PDF、DOCX、Markdown、TXT 格式。
+
+    Args:
+        file_path: JD 文件的绝对路径
+    """
+    try:
+        text = extract_text(file_path)
+    except FileNotFoundError as e:
+        return f"错误：{e}"
+    except ValueError as e:
+        return f"错误：{e}"
+
+    return (
+        f"--- JD CONTENT ---\n{text}\n--- END ---\n\n"
+        "根据以上 JD 内容，请调用 import_jd 工具导入：\n"
+        '示例：import_jd(jd_text=\'{"company":"字节跳动","role":"AI Agent 工程师","requirements":[...]}\'）'
     )
 
 

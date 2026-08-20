@@ -11,15 +11,28 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import time
 from typing import Any
 
 from ..models import CareerProfile
 from .sop_executor import execute_sop_with_retrieval
 
-# TODO: 后续接入真实数据源（JobSpy、Boss直聘等）
-# TODO: 缓存 LLM 分析结果，避免重复调用
-# TODO: Web Search API 接入（Tavily / SerpAPI）
+# 内存缓存：key = hash(who+have+want+target_jd), value = (timestamp, result)
+_analysis_cache: dict[str, tuple[float, tuple[str, dict[str, Any]]]] = {}
+_CACHE_TTL = 300  # 5 分钟
+
+
+def _cache_key(profile: CareerProfile) -> str:
+    """根据档案内容生成缓存 key。"""
+    data = json.dumps({
+        "who": profile.who,
+        "have": profile.have,
+        "want": profile.want,
+        "target_jd": profile.target_jd,
+    }, sort_keys=True, ensure_ascii=False)
+    return hashlib.md5(data.encode()).hexdigest()
 
 
 def build_sop_analysis_prompt(profile: CareerProfile) -> tuple[str, dict[str, Any]]:
@@ -36,6 +49,13 @@ def build_sop_analysis_prompt(profile: CareerProfile) -> tuple[str, dict[str, An
         - prompt_text: 发给 LLM 的完整 prompt
         - sop_metadata: SOP 执行元数据（中间步骤信息）
     """
+    # 缓存检查
+    key = _cache_key(profile)
+    if key in _analysis_cache:
+        ts, cached = _analysis_cache[key]
+        if time.time() - ts < _CACHE_TTL:
+            return cached
+
     metadata = {"steps_executed": []}
 
     # === SOP 1: 简历过筛 ===
@@ -123,7 +143,9 @@ def build_sop_analysis_prompt(profile: CareerProfile) -> tuple[str, dict[str, An
     # 最终输出格式要求
     prompt_parts.extend(_build_output_format_instructions())
 
-    return "\n".join(prompt_parts), metadata
+    result = ("\n".join(prompt_parts), metadata)
+    _analysis_cache[key] = (time.time(), result)
+    return result
 
 
 def _build_output_format_instructions() -> list[str]:

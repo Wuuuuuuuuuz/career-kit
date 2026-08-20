@@ -711,7 +711,7 @@ def test_step8_mcp_tools_registered():
     chain_tools = [
         "start_session",
         "parse_resume", "intake", "finalize_profile",
-        "import_jd", "analyze_gaps", "save_gap_analysis",
+        "import_jd", "import_jd_file", "analyze_gaps", "save_gap_analysis",
         "generate_roadmap", "save_roadmap",
         "generate_schedule", "save_schedule", "export_ics",
         "track_progress", "save_checkin", "view_progress",
