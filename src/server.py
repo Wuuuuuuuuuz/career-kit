@@ -38,6 +38,7 @@ from .tools.profile import (
 )
 from .tools.resume_parser import extract_text
 from .tools.session import get_welcome_message
+from .scrapers import list_scrapers, search_company_jobs, get_job_detail
 
 mcp = FastMCP("career-kit")
 
@@ -719,6 +720,124 @@ def restore_plan(version: int) -> str:
         return f"已恢复到版本 v{version}。当前档案版本：v{profile.version}"
     except ValueError as e:
         return f"错误：{e}"
+
+
+@mcp.tool()
+def list_company_jobs() -> str:
+    """列出所有已注册的企业招聘数据源。
+
+    返回每个企业支持的搜索参数，方便后续调用 fetch_company_jobs。
+    """
+    scrapers = list_scrapers()
+
+    if not scrapers:
+        return "暂无已注册的企业数据源。社区贡献请参考 scrapers/ 目录。"
+
+    lines = ["【已注册企业招聘数据源】\n"]
+    for s in scrapers:
+        lines.append(f"**{s['name']}**（ID: {s['id']}）")
+        if s.get("description"):
+            lines.append(f"  {s['description']}")
+
+        params = s.get("params", {})
+        if params:
+            lines.append("  支持的搜索参数：")
+            for pname, pinfo in params.items():
+                req = "（必填）" if pinfo.get("required") else "（可选）"
+                desc = pinfo.get("description", "")
+                lines.append(f"    - {pname}{req}: {desc}")
+        lines.append("")
+
+    lines.append("调用示例：fetch_company_jobs(company=\"bytedance\", params='{\"keyword\":\"AI Agent\"}')")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def fetch_company_jobs(company: str, params: str = "{}") -> str:
+    """搜索指定企业的岗位。
+
+    Args:
+        company: 企业 ID（通过 list_company_jobs 获取）
+        params: 搜索参数 JSON 字符串（各企业支持的参数不同）
+    """
+    import json
+
+    try:
+        params_dict = json.loads(params) if params else {}
+    except json.JSONDecodeError:
+        return "错误：params 必须是合法的 JSON 字符串"
+
+    result = search_company_jobs(company, **params_dict)
+
+    if result.get("error"):
+        available = result.get("available", [])
+        avail_str = f"\n可用企业：{', '.join(available)}" if available else ""
+        return f"错误：{result['error']}{avail_str}"
+
+    count = result["count"]
+    company_name = result["company"]
+
+    if count == 0:
+        return f"「{company_name}」未找到匹配的岗位。"
+
+    lines = [f"【{company_name}】找到 {count} 个岗位：\n"]
+    for i, job in enumerate(result["results"], 1):
+        title = job.get("title", "未知岗位")
+        location = job.get("location", "")
+        url = job.get("url", "")
+        summary = job.get("summary", "")
+
+        loc_str = f" | {location}" if location else ""
+        lines.append(f"{i}. **{title}**{loc_str}")
+        if url:
+            lines.append(f"   链接：{url}")
+        if summary:
+            lines.append(f"   {summary[:100]}")
+        lines.append("")
+
+    lines.append("获取岗位详情：fetch_jd_detail(url=\"具体岗位URL\")")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def fetch_jd_detail(url: str, company: str = "") -> str:
+    """获取岗位详情（JD 全文）。
+
+    Args:
+        url: 岗位详情页 URL
+        company: 企业 ID（可选，不填则自动尝试所有已注册的 Scraper）
+    """
+    result = get_job_detail(url, company if company else None)
+
+    if result.get("error"):
+        return f"错误：{result['error']}"
+
+    lines = [f"## {result.get('title', '岗位详情')}"]
+    if result.get("company"):
+        lines.append(f"**公司**：{result['company']}")
+    if result.get("location"):
+        lines.append(f"**地点**：{result['location']}")
+    if result.get("salary"):
+        lines.append(f"**薪资**：{result['salary']}")
+    lines.append("")
+
+    if result.get("description"):
+        lines.append("### 岗位描述")
+        lines.append(result["description"])
+        lines.append("")
+
+    if result.get("requirements"):
+        lines.append("### 任职要求")
+        lines.append(result["requirements"])
+        lines.append("")
+
+    if result.get("benefits"):
+        lines.append("### 福利待遇")
+        lines.append(result["benefits"])
+        lines.append("")
+
+    lines.append("如需导入此 JD 进行差距分析，请调用 import_jd(jd_text=...)。")
+    return "\n".join(lines)
 
 
 def main():

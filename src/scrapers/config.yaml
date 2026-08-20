@@ -1,0 +1,28 @@
+# 企业 JD Scraper 注册表
+#
+# 添加新企业：
+# 1. 在 scrapers/ 下新建目录，实现 CompanyScraper
+# 2. 在此文件注册
+# 3. PR 提交
+#
+# 字段说明：
+#   name: 企业名称（显示用）
+#   module: Python 模块路径（相对于 src/scrapers/）
+#   class: Scraper 类名（默认 Scraper）
+#   description: 企业描述（可选）
+#   params: 支持的搜索参数（可选，供 LLM 参考）
+
+scrapers:
+  # 示例：字节跳动（待实现）
+  # bytedance:
+  #   name: 字节跳动
+  #   module: scrapers.bytedance
+  #   class: Scraper
+  #   description: 字节跳动官方招聘
+  #   params:
+  #     keyword:
+  #       description: 岗位关键词
+  #       required: true
+  #     city:
+  #       description: 城市
+  #       required: false
