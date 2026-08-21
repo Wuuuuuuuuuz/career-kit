@@ -8,3 +8,4 @@ build/
 .env
 dev/
 src/scrapers/*/cache/
+.career-kit/
