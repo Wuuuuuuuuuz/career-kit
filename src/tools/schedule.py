@@ -1,9 +1,14 @@
-"""日程生成——SOP 驱动，将路线图拆解为每日时间块日程表。
+"""日程解析、格式化与导出——将 LLM 输出解析为结构化日程表并格式化展示。
 
 借鉴：
 - Syllabus-to-Study-Plan MCP：间隔复习模式、多格式导出
-- TaskFlow AI：自然语言→结构化日计划
+- TaskFlow AI：自然语言->结构化日计划
 - AI-Daily-Planner：时间块排程
+
+estimate_available_time: 估算用户可用学习时间
+parse_schedule: 将 LLM 输出解析为结构化日程数据
+format_schedule: 将结构化数据格式化为可读文本
+generate_ics: 生成 ICS 日历文件
 """
 
 from __future__ import annotations
@@ -12,55 +17,6 @@ import json
 from typing import Any
 
 from ..models import CareerProfile
-from .sop_executor import execute_sop
-
-
-def build_schedule_prompt(profile: CareerProfile, scope: str = "this_week") -> tuple[str, dict[str, Any]]:
-    """构建日程生成的 LLM prompt。
-
-    Args:
-        profile: 用户职业档案（必须已有 plan 数据）
-        scope: 范围（today / this_week / this_month / phase_id）
-
-    Returns:
-        (prompt_text, metadata) 元组
-    """
-    metadata = {"scope": scope}
-
-    # 提取路线图数据
-    roadmap = profile.plan.get("roadmap", profile.plan)
-    roadmap_text = json.dumps(roadmap, ensure_ascii=False, indent=2) if roadmap else "（未找到路线图）"
-
-    # 推算可用时间
-    available_time = _estimate_available_time(profile)
-
-    # 执行 SOP
-    sop_result = execute_sop("schedule", user_have=profile.have, user_want=profile.want)
-
-    # 注入上下文变量
-    context = sop_result["context"]
-    context["roadmap"] = roadmap_text
-    context["scope"] = _scope_description(scope)
-    context["available_time"] = available_time
-
-    metadata["schedule_sop"] = {
-        "name": sop_result["sop_name"],
-        "version": sop_result["sop_version"],
-        "steps": [{"id": s["id"], "name": s["name"]} for s in sop_result["steps"]],
-    }
-
-    # 构建 prompt
-    prompt_parts = []
-    for step in sop_result["steps"]:
-        if step.get("prompt"):
-            prompt = step["prompt"]
-            # 替换额外变量
-            prompt = prompt.replace("{roadmap}", roadmap_text)
-            prompt = prompt.replace("{scope}", _scope_description(scope))
-            prompt = prompt.replace("{available_time}", available_time)
-            prompt_parts.append(f"### {step['name']}\n\n{prompt}")
-
-    return "\n\n".join(prompt_parts), metadata
 
 
 def _scope_description(scope: str) -> str:

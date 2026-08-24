@@ -1,90 +1,64 @@
-# 日程生成 SOP
-# 目标：将路线图拆解为每日可执行的计划
-
 name: 日程生成
-version: "1.0"
-description: 从路线图出发，生成每日时间块（time-block）日程表
+version: "2.0"
+description: 从路线图出发，生成每日时间块（time-block）日程表，支持导出 ICS 日历
 
-steps:
-  - id: extract_tasks
-    name: 提取待排任务
-    description: 从路线图中提取当前 scope 范围内的所有任务
-    prompt_template: |
-      你是一个执行力教练。
+methodology:
+  principles:
+    - "每天不超过 8 小时有效学习/工作时间——过载会导致效率下降和倦怠"
+    - "高优先级任务排在前面——利用精力最好的时段处理最难的任务"
+    - "每隔 3 天安排一个复习日——间隔复习比连续学习效果好"
+    - "时间块 1-3 小时，块之间留 15 分钟休息——保持专注度"
+    - "有依赖关系的任务按顺序排——不能先学高级内容再学基础"
+    - "学习类型要多样化：learn（学新知识）、practice（练习/刷题）、review（间隔复习）、project（做项目）"
 
-      ## 路线图
-      {roadmap}
+  phases:
+    - id: extract_tasks
+      name: 提取待排任务
+      guidance: |
+        从路线图中提取当前 scope 范围内的所有任务。scope 可以是 today / this_week / this_month。
+        每个任务需要标注：所属阶段、所属里程碑、优先级、时间估算、依赖关系。
+        这一步是从宏观路线图到微观日程的桥梁——确保不遗漏任何任务。
+      data_needs:
+        - type: roadmap
+          query_hint: "从 profile 中获取路线图数据"
+          local_paths: []
+        - type: scope
+          query_hint: "用户指定的时间范围"
+          local_paths: []
+      quality_gate: "所有任务均已提取，依赖关系完整，时间估算合理"
 
-      ## 当前范围
-      {scope}
+    - id: generate_schedule
+      name: 生成日程表
+      guidance: |
+        将任务分配到每一天，生成 time-block 日程表。排程规则：
+        1. 高优先级任务排在前面
+        2. 有依赖关系的任务按顺序排
+        3. 每天不超过 8 小时有效学习/工作时间
+        4. 每隔 3 天安排一个复习日（回顾前几天学的内容）
+        5. 每个时间块 1-3 小时，块之间留 15 分钟休息
 
-      请从路线图中提取 {scope} 范围内的所有任务，输出 JSON：
-      {{
-        "tasks": [
-          {{
-            "task": "任务描述",
-            "phase": "所属阶段",
-            "milestone": "所属里程碑",
-            "priority": "high|medium|low",
-            "estimated_time": "时间估算",
-            "depends_on": ["依赖的其他任务（如有）"]
-          }}
-        ],
-        "total_tasks": 0,
-        "estimated_total_time": "总时间估算"
-      }}
-    output_fields:
-      - extracted_tasks
+        每个时间块需要标注类型：
+        - learn：学习新知识
+        - practice：练习/刷题
+        - review：间隔复习
+        - project：做项目
 
-  - id: build_schedule
-    name: 生成日程表
-    description: 将任务分配到每一天，考虑优先级和依赖关系
-    prompt_template: |
-      你是一个日程规划专家，擅长时间块（time-block）排程。
+        日程要有弹性——如果某天任务未完成，可以顺延到下一天。
+        优先保证高优先级任务的完成。
+      data_needs:
+        - type: extracted_tasks
+          query_hint: "从上一步提取的任务列表"
+          local_paths: []
+        - type: available_time
+          query_hint: "用户可用时间配置"
+          local_paths: []
+      quality_gate: "每天不超过 8 小时，每 3 天有复习日，任务按优先级和依赖排序"
+      depends_on: [extract_tasks]
 
-      ## 待排任务
-      {extracted_tasks}
-
-      ## 用户可用时间
-      {available_time}
-
-      请生成日程表。排程原则：
-      1. **高优先级任务排在前面**
-      2. **有依赖关系的任务按顺序排**
-      3. **每天不超过 8 小时有效学习/工作时间**
-      4. **每隔 3 天安排一个复习日**（间隔复习：回顾前几天学的内容）
-      5. **每个时间块 1-3 小时**，块之间留 15 分钟休息
-
-      请严格输出以下 JSON 格式：
-      ```json
-      {{
-        "schedule": {{
-          "total_days": 0,
-          "daily_plans": [
-            {{
-              "day": 1,
-              "date": "日期（如果能推算的话，否则写 Day 1）",
-              "theme": "今天的主题（如：LangChain 基础、RAG 实战）",
-              "blocks": [
-                {{
-                  "time": "09:00-11:00",
-                  "task": "具体任务",
-                  "type": "learn|practice|review|project",
-                  "priority": "high|medium|low"
-                }}
-              ],
-              "total_hours": 6,
-              "notes": "备注（如有）"
-            }}
-          ]
-        }}
-      }}
-      ```
-
-      type 说明：
-      - learn：学习新知识
-      - practice：练习/刷题
-      - review：间隔复习（回顾前几天的内容）
-      - project：做项目
-    output_fields:
-      - schedule
+  output_schema:
+    total_days: "总天数"
+    daily_plans: |
+      每日计划，每天包含：
+      - day, date, theme
+      - blocks[]: { time, task, type, priority }
+      - total_hours, notes

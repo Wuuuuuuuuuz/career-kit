@@ -1,137 +1,72 @@
-# 简历过筛 SOP
-# 目标：帮助用户优化简历，通过 ATS 和 HR 筛选
-
 name: 简历过筛
-version: "1.0"
-description: 从 ATS 关键词、项目包装、简历结构三个维度优化简历
+version: "2.0"
+description: 从 ATS 关键词、项目包装、简历结构三个维度优化简历，通过 ATS 和 HR 筛选
 
-steps:
-  - id: build_persona
-    name: 构建候选人画像
-    description: 基于用户档案确定候选人类型，用于后续精准检索
-    prompt_template: |
-      基于以下用户档案，确定候选人画像：
+methodology:
+  principles:
+    - "ATS 关键词覆盖是第一关——简历必须包含 JD 中的核心关键词，否则机器直接过滤"
+    - "项目包装用 STAR 法则（Situation-Task-Action-Result），量化结果是核心"
+    - "简历结构必须符合行业标准：清晰的层次、一致的格式、突出的重点"
+    - "量化程度决定可信度——用数据说话，避免空洞描述"
+    - "隐藏需求（文化匹配、软技能暗示）往往被忽略但影响终面"
 
-      ## 用户现状
-      {user_have}
+  phases:
+    - id: gather_data
+      name: 数据收集
+      guidance: |
+        先确定候选人画像（背景类型、学历、经验、目标岗位），再从三个维度并行检索：
+        1. 同背景案例——找相同背景前辈的简历作为对标
+        2. 岗位要求——目标岗位的典型 JD、必备技能、ATS 关键词
+        3. 筛选标准——企业 HR 和 ATS 的实际筛选逻辑
+        画像决定检索方向，检索结果为后续分析提供数据基础。
+      data_needs:
+        - type: similar_profiles
+          query_hint: "{background_type} {education_level} {target_role} 简历 模板"
+          local_paths: ["resumes/"]
+        - type: job_requirements
+          query_hint: "{target_role} {company_tier} JD 要求 必备技能"
+          local_paths: ["jds/"]
+        - type: market_trends
+          query_hint: "{target_role} 简历筛选标准 ATS 关键词 {background_type}"
+          local_paths: ["market/"]
+      quality_gate: "画像完整且三个维度均有检索结果"
 
-      ## 用户目标
-      {user_want}
+    - id: analyze_gaps
+      name: 差异分析
+      guidance: |
+        对比用户现状与对标数据，从四个维度深入分析差距：
+        1. 关键词覆盖：用户简历 vs ATS 关键词库，缺了哪些
+        2. 项目匹配：用户的项目经验 vs 岗位要求，如何重新包装
+        3. 结构问题：简历结构是否符合行业标准，层次是否清晰
+        4. 量化程度：是否有数据支撑，哪些地方需要补充量化
+        每个差距都要给出具体的弥补方向，不能泛泛而谈。
+      data_needs:
+        - type: user_have
+          query_hint: "从 profile 中获取"
+          local_paths: []
+      quality_gate: "四个维度均有具体差距项，每个差距有明确描述"
+      depends_on: [gather_data]
 
-      请输出 JSON：
-      {{
-        "background_type": "985/211/双非/海归/...",
-        "education_level": "本科/硕士/博士",
-        "experience_level": "应届/1-3年/3-5年/5年+",
-        "target_role": "目标岗位",
-        "target_company_tier": "大厂/中厂/创业公司/...",
-        "transfer_type": "本行/转行/...",
-        "one_line_summary": "一句话描述这个候选人"
-      }}
-    output_fields:
-      - persona
+    - id: generate_advice
+      name: 生成优化建议
+      guidance: |
+        基于差异分析，给出可直接执行的简历修改建议。必须包含：
+        1. ATS 关键词清单——必须出现的关键词，按重要性排序
+        2. 缺失关键词——简历中缺少但 JD 要求的关键词
+        3. 项目包装方案——每个项目用 STAR 法则重新包装，给出量化结果表述
+        4. 简历修改建议——结构、措辞、排版等具体修改点
+        5. 补充经历建议——缺失的经历类型及如何在短时间内创造
+        建议必须具体到可直接修改的程度，不能只给方向。
+      data_needs:
+        - type: user_have
+          query_hint: "从 profile 中获取"
+          local_paths: []
+      quality_gate: "每条建议可直接执行，项目包装包含 STAR 框架和量化结果"
+      depends_on: [analyze_gaps]
 
-  - id: search_similar_profiles
-    name: 检索同背景案例
-    description: 找到同背景前辈的简历作为对标
-    data_source: similar_profiles
-    query_template: "{persona.background_type} {persona.education_level} {persona.target_role} 简历 模板"
-    local_search_paths:
-      - "resumes/"
-    output_fields:
-      - similar_profiles
-
-  - id: search_job_requirements
-    name: 检索岗位要求
-    description: 搜集目标岗位的典型 JD 要求和 ATS 关键词
-    data_source: job_requirements
-    query_template: "{persona.target_role} {persona.target_company_tier} JD 要求 必备技能"
-    local_search_paths:
-      - "jds/"
-    output_fields:
-      - job_requirements
-
-  - id: search_screening_criteria
-    name: 检索筛选标准
-    description: 了解企业 HR 和 ATS 的筛选逻辑
-    data_source: market_trends
-    query_template: "{persona.target_role} 简历筛选标准 ATS 关键词 {persona.background_type}"
-    local_search_paths:
-      - "market/"
-    output_fields:
-      - screening_criteria
-
-  - id: analyze_diff
-    name: 差异分析
-    description: 对比用户现状与对标数据，找出差距
-    prompt_template: |
-      你是一个资深的简历优化顾问和 ATS 专家。
-
-      ## 用户现状
-      {user_have}
-
-      ## 同背景对标案例
-      {similar_profiles}
-
-      ## 岗位要求
-      {job_requirements}
-
-      ## 筛选标准
-      {screening_criteria}
-
-      请从以下维度分析差距：
-      1. 关键词覆盖：用户简历 vs ATS 关键词库，缺了哪些
-      2. 项目匹配：用户的项目经验 vs 岗位要求，如何包装
-      3. 结构问题：简历结构是否符合行业标准
-      4. 量化程度：是否有数据支撑
-
-      输出 JSON：
-      {{
-        "keyword_gaps": ["缺失的关键词"],
-        "project_mismatch": [
-          {{"user_project": "用户项目", "gap": "差距描述", "how_to_bridge": "如何弥补"}}
-        ],
-        "structural_issues": ["结构问题"],
-        "quantification_gaps": ["量化不足的地方"]
-      }}
-    output_fields:
-      - diff_analysis
-
-  - id: build_resume_advice
-    name: 构建简历优化建议
-    description: 基于差异分析，给出具体的简历修改建议
-    prompt_template: |
-      你是一个资深的简历优化顾问。
-
-      ## 用户现状
-      {user_have}
-
-      ## 差异分析
-      {diff_analysis}
-
-      ## 岗位要求
-      {job_requirements}
-
-      请给出具体的简历优化建议，严格按照以下 JSON 格式输出：
-      {{
-        "ats_keywords": ["简历中必须出现的关键词，按重要性排序"],
-        "missing_keywords": ["简历中缺少但岗位要求的关键词"],
-        "highlight_projects": [
-          {{
-            "project": "项目名",
-            "how_to_package": "如何包装这个项目（STAR 法则）",
-            "quantified_result": "建议的量化结果表述"
-          }}
-        ],
-        "resume_tips": [
-          "具体的简历修改建议（结构、措辞、排版等）"
-        ],
-        "missing_experiences": [
-          {{
-            "experience": "建议补充的经历类型",
-            "how_to_create": "如何在短时间内创造这个经历（如做项目、贡献开源等）"
-          }}
-        ]
-      }}
-    output_fields:
-      - resume_optimization
+  output_schema:
+    ats_keywords: "简历中必须出现的关键词，按重要性排序"
+    missing_keywords: "简历中缺少但岗位要求的关键词"
+    highlight_projects: "项目包装方案（项目名 + STAR 包装 + 量化结果）"
+    resume_tips: "具体的简历修改建议（结构、措辞、排版）"
+    missing_experiences: "建议补充的经历类型及创造方式"

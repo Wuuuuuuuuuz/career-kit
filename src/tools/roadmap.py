@@ -1,108 +1,13 @@
-"""路线图生成——SOP 驱动，基于差距分析生成分阶段职业路线图。
+"""路线图解析与格式化——将 LLM 输出解析为结构化路线图并格式化展示。
 
-宏观：分阶段（learn/project/intern/research），每阶段有量化 KPI
-微观：落到每一天的任务，最终产出日程表
+parse_roadmap: 将 LLM 输出解析为结构化路线图数据
+format_roadmap: 将结构化数据格式化为可读文本
 """
 
 from __future__ import annotations
 
 import json
 from typing import Any
-
-from ..models import CareerProfile
-from .sop_executor import execute_sop
-
-
-def build_roadmap_prompt(profile: CareerProfile) -> tuple[str, dict[str, Any]]:
-    """构建路线图生成的 LLM prompt。
-
-    Args:
-        profile: 用户职业档案（必须已有 gap 数据）
-
-    Returns:
-        (prompt_text, metadata) 元组
-    """
-    metadata = {"steps_executed": []}
-
-    # 构建差距分析摘要
-    gap_summary = _build_gap_summary(profile.gap)
-
-    # 执行路线图 SOP
-    sop_result = execute_sop(
-        "roadmap",
-        user_have=profile.have,
-        user_want=profile.want,
-    )
-
-    # 将 gap_summary 注入上下文
-    context = sop_result["context"]
-    context["gap_summary"] = gap_summary
-
-    metadata["roadmap_sop"] = {
-        "name": sop_result["sop_name"],
-        "version": sop_result["sop_version"],
-        "steps": [{"id": s["id"], "name": s["name"]} for s in sop_result["steps"]],
-    }
-
-    # 重新构建 prompt（因为 execute_sop 不会用到 gap_summary）
-    prompt_parts = []
-    for step in sop_result["steps"]:
-        if step.get("prompt"):
-            # 替换 gap_summary 变量
-            prompt = step["prompt"]
-            if "{gap_summary}" in prompt:
-                prompt = prompt.replace("{gap_summary}", gap_summary)
-            prompt_parts.append(f"### {step['name']}\n\n{prompt}")
-
-    return "\n\n".join(prompt_parts), metadata
-
-
-def _build_gap_summary(gap: dict[str, Any]) -> str:
-    """从差距分析中提取摘要，作为路线图的输入。"""
-    if not gap:
-        return "（未完成差距分析）"
-
-    parts = []
-
-    # 匹配度
-    score = gap.get("match_score", 0)
-    level = gap.get("match_level", "")
-    parts.append(f"匹配度：{score}/100 ({level})")
-
-    # 技能差距
-    skill_gaps = gap.get("skill_gaps", [])
-    if skill_gaps:
-        parts.append("\n### 技能差距")
-        for g in skill_gaps:
-            hidden = "（隐性）" if g.get("is_hidden") else ""
-            parts.append(f"- {g.get('skill', '')}{hidden}：{g.get('current_level', '?')} → {g.get('required_level', '?')} [优先级: {g.get('priority', '?')}]")
-            if g.get("how_to_improve"):
-                parts.append(f"  提升建议：{g['how_to_improve']}")
-
-    # 优先行动项
-    actions = gap.get("priority_actions", [])
-    if actions:
-        parts.append("\n### 优先行动项")
-        for a in actions:
-            parts.append(f"- {a.get('action', '')} [时间: {a.get('timeline', '?')}, 影响: {a.get('impact', '?')}, 难度: {a.get('difficulty', '?')}]")
-
-    # 需要补充的经历
-    missing_exp = gap.get("resume_optimization", {}).get("missing_experiences", [])
-    if missing_exp:
-        parts.append("\n### 需要补充的经历")
-        for e in missing_exp:
-            parts.append(f"- {e.get('experience', '')}：{e.get('how_to_create', '')}")
-
-    # 面试准备
-    interview = gap.get("interview_preparation", {})
-    study_plan = interview.get("study_plan", {})
-    if study_plan:
-        parts.append("\n### 面试学习计划")
-        for week, items in study_plan.items():
-            if isinstance(items, list):
-                parts.append(f"- {week}：{', '.join(items)}")
-
-    return "\n".join(parts)
 
 
 def parse_roadmap(llm_response: str) -> dict[str, Any]:

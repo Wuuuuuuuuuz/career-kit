@@ -27,6 +27,16 @@ class PlanVersion(BaseModel):
     import_file: str | None = None
 
 
+class JourneyEntry(BaseModel):
+    """学习轨迹条目——记录每次交互的知识和产出。"""
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    phase: str = ""  # "analysis" | "learning" | "interview" | "adjustment"
+    knowledge: list[dict[str, Any]] = Field(default_factory=list)  # 搜索结果、参考资料
+    analysis: dict[str, Any] = Field(default_factory=dict)  # 中间分析产出
+    decision: str = ""  # 用户做了什么决定
+    plan_changes: dict[str, Any] = Field(default_factory=dict)  # 计划调整
+
+
 class CareerProfile(BaseModel):
     """职业档案。只强制 5 个 section，内部放什么由 LLM 根据用户情况决定。"""
 
@@ -40,6 +50,7 @@ class CareerProfile(BaseModel):
     target_jd: dict[str, Any] = Field(default_factory=dict, description="目标岗位 JD 解析结果")
 
     plan_history: list[PlanVersion] = Field(default_factory=list, description="计划版本历史")
+    journey: list[JourneyEntry] = Field(default_factory=list, description="学习轨迹——记录每次交互的知识和产出")
 
     summary: str = ""
     version: int = 0
@@ -78,3 +89,8 @@ class CareerProfile(BaseModel):
                 self.touch()
                 return
         raise ValueError(f"版本 {version} 不存在")
+
+    def append_journey(self, entry: JourneyEntry) -> None:
+        """追加学习轨迹条目并更新版本。"""
+        self.journey.append(entry)
+        self.touch()

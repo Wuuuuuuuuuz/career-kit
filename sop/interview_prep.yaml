@@ -1,182 +1,75 @@
-# 面试通过 SOP
-# 目标：帮助用户系统性准备面试，提高通过率
-
 name: 面试通过
-version: "1.0"
-description: 从面经搜集、高频题归纳、针对性准备三个维度帮助用户通过面试
+version: "2.0"
+description: 从面经搜集、高频题归纳、针对性准备三个维度帮助用户系统性准备面试
 
-steps:
-  - id: build_persona
-    name: 构建候选人画像
-    description: 复用简历过筛的画像（如果已有则跳过）
-    prompt_template: |
-      基于以下用户档案，确定候选人画像：
+methodology:
+  principles:
+    - "面试题有明确分类：八股文、项目深挖、系统设计、行为面、算法——每类有不同准备策略"
+    - "能力匹配是核心——先评估用户当前水平，再针对性补强，避免无效准备"
+    - "STAR 法则是项目深挖题的万能框架，每个项目故事都要练到脱口而出"
+    - "间隔复习比突击有效——面试准备要有节奏感，不能一次性灌输"
+    - "面试流程因公司而异——了解目标公司的面试轮次和侧重，才能有的放矢"
 
-      ## 用户现状
-      {user_have}
+  phases:
+    - id: gather_data
+      name: 数据收集
+      guidance: |
+        先确定候选人画像（背景、经验、目标岗位、目标公司），再从两个维度检索：
+        1. 面经——目标公司/岗位的真实面试经验（几轮、问什么、难度）
+        2. 面试题——岗位相关的高频面试题（按技术栈分类）
+        画像决定检索方向，面经提供面试流程信息，面试题提供具体内容。
+      data_needs:
+        - type: interview_experiences
+          query_hint: "{target_company} {target_role} 面试 面经"
+          local_paths: ["interviews/"]
+        - type: interview_questions
+          query_hint: "{target_role} 技术面试题 高频 {experience_level}"
+          local_paths: ["interviews/"]
+      quality_gate: "面经覆盖目标公司，面试题数量足够分类统计"
 
-      ## 用户目标
-      {user_want}
+    - id: analyze_interview
+      name: 面试分析
+      guidance: |
+        分两步分析：
+        第一步——题目分类统计：
+        - 八股文：基础知识、原理性问题
+        - 项目深挖：针对简历项目的追问
+        - 系统设计：架构设计题
+        - 行为面：软技能、团队协作
+        - 算法：手撕代码、算法题
+        标注每类题的出现频率和面试流程（几轮、每轮侧重）。
 
-      请输出 JSON：
-      {{
-        "background_type": "985/211/双非/海归/...",
-        "education_level": "本科/硕士/博士",
-        "experience_level": "应届/1-3年/3-5年/5年+",
-        "target_role": "目标岗位",
-        "target_company": "目标公司（如有）",
-        "target_company_tier": "大厂/中厂/创业公司/...",
-        "one_line_summary": "一句话描述这个候选人"
-      }}
-    output_fields:
-      - persona
+        第二步——能力匹配：
+        - 用户能答好的题 → 强化建议（如何答得更好）
+        - 用户答不好的题 → 补课清单（学习建议）
+        - 用户完全不会的题 → 优先级评估（风险等级 + 准备建议）
+      data_needs:
+        - type: user_have
+          query_hint: "从 profile 中获取"
+          local_paths: []
+      quality_gate: "五类题目均有覆盖，能力匹配有明确的强/弱/盲区划分"
+      depends_on: [gather_data]
 
-  - id: search_interview_experiences
-    name: 搜集面经
-    description: 搜集目标公司/岗位的面试经验
-    data_source: interview_experiences
-    query_template: "{persona.target_company} {persona.target_role} 面试 面经"
-    local_search_paths:
-      - "interviews/"
-    output_fields:
-      - interview_experiences
+    - id: generate_preparation
+      name: 生成面试准备方案
+      guidance: |
+        基于分析结果，给出系统性的面试准备方案。必须包含：
+        1. 必考题清单——按类型和优先级排列，每个给具体准备建议和时间估算
+        2. 项目深挖准备——每个项目列出可能被问的问题、回答要点、STAR 故事框架
+        3. 系统设计专题——答题框架提示
+        4. 行为面试准备——常见问题 + 故事模板（什么场景用什么故事）
+        5. 学习计划——按周拆分，每周有明确的学习内容
+        方案要可执行，时间估算要现实。
+      data_needs:
+        - type: user_have
+          query_hint: "从 profile 中获取"
+          local_paths: []
+      quality_gate: "每个项目有 STAR 故事框架，学习计划按周拆分且内容具体"
+      depends_on: [analyze_interview]
 
-  - id: search_interview_questions
-    name: 搜集面试题
-    description: 搜集岗位相关的高频面试题
-    data_source: interview_experiences
-    query_template: "{persona.target_role} 技术面试题 高频 {persona.experience_level}"
-    local_search_paths:
-      - "interviews/"
-    output_fields:
-      - interview_questions
-
-  - id: categorize_questions
-    name: 面试题分类统计
-    description: 将搜集到的面试题按类型和频率分类
-    prompt_template: |
-      你是一个面试题分析专家。
-
-      ## 搜集到的面经和面试题
-      {interview_experiences}
-
-      {interview_questions}
-
-      请将面试题按以下类型分类，并标注出现频率：
-
-      类型定义：
-      - 八股文：基础知识、原理性问题（如"解释一下 TCP 三次握手"）
-      - 项目深挖：针对简历项目的追问（如"这个项目的难点是什么"）
-      - 系统设计：架构设计题（如"设计一个消息队列"）
-      - 行为面：软技能、团队协作（如"遇到过什么冲突"）
-      - 算法：手撕代码、算法题
-
-      输出 JSON：
-      {{
-        "by_type": {{
-          "fundamentals": [
-            {{"question": "题目", "frequency": "high/medium/low", "key_points": ["回答要点"]}}
-          ],
-          "project_deep_dive": [
-            {{"question": "题目", "frequency": "high/medium/low", "key_points": ["回答要点"]}}
-          ],
-          "system_design": [
-            {{"question": "题目", "frequency": "high/medium/low", "key_points": ["回答要点"]}}
-          ],
-          "behavioral": [
-            {{"question": "题目", "frequency": "high/medium/low", "key_points": ["回答要点"]}}
-          ],
-          "algorithm": [
-            {{"question": "题目", "frequency": "high/medium/low", "key_points": ["回答要点"]}}
-          ]
-        }},
-        "interview_flow": "面试流程描述（几轮、每轮侧重）",
-        "total_questions": 0
-      }}
-    output_fields:
-      - categorized_questions
-
-  - id: match_user_ability
-    name: 匹配用户能力
-    description: 将面试题与用户现有能力匹配，找出薄弱环节
-    prompt_template: |
-      你是一个面试辅导专家。
-
-      ## 用户能力
-      {user_have}
-
-      ## 分类后的面试题
-      {categorized_questions}
-
-      请分析：
-      1. 用户能答好的题 → 强化建议
-      2. 用户答不好的题 → 补课清单
-      3. 用户完全不会的题 → 优先级评估
-
-      输出 JSON：
-      {{
-        "strengths": [
-          {{"topic": "主题", "reason": "为什么用户能答好", "enhance_advice": "如何答得更好"}}
-        ],
-        "weaknesses": [
-          {{"topic": "主题", "current_level": "当前水平", "target_level": "要求水平", "priority": "high/medium/low", "study_advice": "学习建议"}}
-        ],
-        "blind_spots": [
-          {{"topic": "主题", "risk_level": "high/medium/low", "prepare_advice": "准备建议"}}
-        ]
-      }}
-    output_fields:
-      - ability_match
-
-  - id: build_interview_advice
-    name: 构建面试准备建议
-    description: 基于分析结果，给出系统性的面试准备方案
-    prompt_template: |
-      你是一个资深的面试辅导专家。
-
-      ## 用户能力匹配分析
-      {ability_match}
-
-      ## 分类后的面试题
-      {categorized_questions}
-
-      请给出系统性的面试准备建议，严格按照以下 JSON 格式输出：
-      {{
-        "must_prepare": [
-          {{
-            "topic": "必考题主题",
-            "type": "八股文/项目深挖/系统设计/行为面/算法",
-            "priority": "high/medium/low",
-            "prepare_advice": "具体准备建议",
-            "estimated_time": "建议准备时间"
-          }}
-        ],
-        "project_deep_dive": [
-          {{
-            "project": "项目名",
-            "likely_questions": ["可能被问到的问题"],
-            "key_points": ["回答要点"],
-            "star_story": "用 STAR 法则组织的故事框架"
-          }}
-        ],
-        "system_design_topics": [
-          {{
-            "topic": "系统设计题",
-            "framework": "答题框架提示"
-          }}
-        ],
-        "behavioral_questions": [
-          {{
-            "question": "行为面试题",
-            "story_template": "故事模板（什么场景下用什么故事）"
-          }}
-        ],
-        "study_plan": {{
-          "week_1": ["第一周学习内容"],
-          "week_2": ["第二周学习内容"],
-          "week_3": ["第三周学习内容"],
-          "week_4": ["第四周学习内容"]
-        }}
-      }}
-    output_fields:
-      - interview_preparation
+  output_schema:
+    must_prepare: "必考题清单（主题、类型、优先级、准备建议、时间估算）"
+    project_deep_dive: "项目深挖准备（项目名、可能问题、要点、STAR 故事）"
+    system_design_topics: "系统设计专题（题目、答题框架）"
+    behavioral_questions: "行为面试准备（问题、故事模板）"
+    study_plan: "学习计划（按周拆分，每周具体内容）"
