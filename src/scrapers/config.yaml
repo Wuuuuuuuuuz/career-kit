@@ -36,3 +36,28 @@ scrapers:
       limit:
         description: 返回数量上限，默认 20
         required: false
+
+  nowcoder:
+    name: 牛客网
+    module: nowcoder.scraper
+    class: Scraper
+    description: 牛客网面经分享平台（nowcoder.com），搜索和获取面经数据
+    url_patterns:
+      - "nowcoder.com"
+    data_type: interviews
+    params:
+      keyword:
+        description: 搜索关键词（如 "面经"、"AI Agent"、"字节跳动"）
+        required: false
+      company:
+        description: 按公司筛选（如 "字节跳动"、"腾讯"）
+        required: false
+      order:
+        description: "排序方式：create=最新(默认), quality=最热"
+        required: false
+      page:
+        description: 页码，默认 1
+        required: false
+      limit:
+        description: 返回数量上限，默认 20
+        required: false

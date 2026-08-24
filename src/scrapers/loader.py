@@ -149,13 +149,31 @@ def _validate_results(results: list[dict[str, Any]], company_name: str) -> list[
     return validated
 
 
-def _auto_write_knowledge(company: str, data: Any, data_type: str = "jds") -> None:
-    """自动写入知识库。scraper 无需手动调用。"""
+def _auto_write_knowledge(company: str, data: Any, data_type: str | None = None) -> None:
+    """自动写入知识库。scraper 无需手动调用。
+
+    data_type 优先级：参数 > config.yaml > scraper 类属性 > 默认 "jds"
+    """
     try:
         config = _load_config()
-        module_path = config.get("scrapers", {}).get(company, {}).get("module", "")
+        scraper_config = config.get("scrapers", {}).get(company, {})
+        module_path = scraper_config.get("module", "")
         if not module_path:
             return
+
+        # 确定 data_type
+        if data_type is None:
+            data_type = scraper_config.get("data_type", "")
+
+        if not data_type:
+            # 尝试从 scraper 类属性获取
+            scraper = get_scraper(company)
+            if scraper and hasattr(scraper, "DATA_TYPE"):
+                data_type = scraper.DATA_TYPE
+
+        if not data_type:
+            data_type = "jds"
+
         full_module = f"src.scrapers.{module_path}"
         write_to_knowledge(full_module, data, data_type=data_type)
     except Exception as e:
