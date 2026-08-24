@@ -18,6 +18,8 @@ scrapers:
     module: bytedance.scraper
     class: Scraper
     description: 字节跳动官方招聘（jobs.bytedance.com），支持社招/校招
+    url_patterns:
+      - "jobs.bytedance.com"
     params:
       keyword:
         description: 搜索关键词（如 "Python"、"AI Agent"）

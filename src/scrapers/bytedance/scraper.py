@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
-import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 
+from ...tools.cache import CacheManager, cache_key
 from ..base import CompanyScraper
 
 # 缓存目录
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
-# 缓存 TTL（秒）
-SEARCH_CACHE_TTL = 3600      # 搜索结果 1 小时
-DETAIL_CACHE_TTL = 86400     # 详情 24 小时
+# 两种 TTL 的缓存实例
+_search_cache = CacheManager(backend="file", ttl=3600, cache_dir=CACHE_DIR / "search")
+_detail_cache = CacheManager(backend="file", ttl=86400, cache_dir=CACHE_DIR / "detail")
 
 # 城市名称 → 代码映射（常用）
 CITY_MAP: dict[str, str] = {
@@ -57,7 +56,13 @@ class Scraper(CompanyScraper):
     search: Playwright 加载页面 → 拦截 XHR → 提取搜索结果
     get_detail: httpx 直调详情 API（无需签名）
     缓存: 搜索结果 1 小时，详情 24 小时
+    知识库写入: 由 loader 自动处理
     """
+
+    COMPANY_SLUG = "bytedance"
+
+    def supports_url(self, url: str) -> bool:
+        return "jobs.bytedance.com" in url
 
     def search(self, **kwargs: Any) -> list[dict[str, Any]]:
         """搜索字节跳动岗位。先查缓存，未命中再抓取。"""
@@ -68,8 +73,8 @@ class Scraper(CompanyScraper):
         limit = kwargs.get("limit", 20)
 
         # 查缓存
-        cache_key = self._cache_key("search", keyword=keyword, city=city, job_type=job_type, portal=portal)
-        cached = self._cache_get(cache_key, SEARCH_CACHE_TTL)
+        key = cache_key(keyword=keyword, city=city, job_type=job_type, portal=portal)
+        cached = _search_cache.get(key)
         if cached is not None:
             return cached[:limit]
 
@@ -79,9 +84,9 @@ class Scraper(CompanyScraper):
             portal=portal, limit=limit,
         )
 
-        # 缓存成功结果
+        # 缓存成功结果（知识库写入由 loader 自动处理）
         if results and "error" not in results[0]:
-            self._cache_set(cache_key, results)
+            _search_cache.set(key, results)
 
         return results
 
@@ -92,8 +97,8 @@ class Scraper(CompanyScraper):
             return {"error": f"无法从 URL 提取 job_id: {url}"}
 
         # 查缓存
-        cache_key = self._cache_key("detail", job_id=job_id)
-        cached = self._cache_get(cache_key, DETAIL_CACHE_TTL)
+        key = cache_key(job_id=job_id)
+        cached = _detail_cache.get(key)
         if cached is not None:
             return cached
 
@@ -127,9 +132,9 @@ class Scraper(CompanyScraper):
 
         result = self._format_detail(detail, url)
 
-        # 缓存成功结果
+        # 缓存成功结果（知识库写入由 loader 自动处理）
         if "error" not in result:
-            self._cache_set(cache_key, result)
+            _detail_cache.set(key, result)
 
         return result
 
@@ -350,37 +355,3 @@ class Scraper(CompanyScraper):
         text = text.replace("\n", " ").strip()
         return text[:max_len] + "..." if len(text) > max_len else text
 
-    # === 缓存方法 ===
-
-    @staticmethod
-    def _cache_key(prefix: str, **params: Any) -> str:
-        """生成缓存文件名。"""
-        raw = json.dumps(params, sort_keys=True, ensure_ascii=False)
-        h = hashlib.md5(raw.encode()).hexdigest()[:12]
-        return f"{prefix}_{h}"
-
-    @staticmethod
-    def _cache_get(key: str, ttl: int) -> Any | None:
-        """读缓存，过期返回 None。"""
-        path = CACHE_DIR / f"{key}.json"
-        if not path.exists():
-            return None
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if time.time() - data.get("ts", 0) > ttl:
-                return None
-            return data.get("value")
-        except Exception:
-            return None
-
-    @staticmethod
-    def _cache_set(key: str, value: Any) -> None:
-        """写缓存。"""
-        path = CACHE_DIR / f"{key}.json"
-        try:
-            path.write_text(
-                json.dumps({"ts": time.time(), "value": value}, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except Exception:
-            pass
