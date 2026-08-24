@@ -38,7 +38,12 @@ def write_to_knowledge(
     """
     # 提取公司名（跳过 src.scrapers 前缀）
     parts = company_module.split(".")
-    company_name = parts[2] if len(parts) > 2 else parts[0]
+    if len(parts) >= 3 and parts[0] == "src" and parts[1] == "scrapers":
+        company_name = parts[2]
+    elif len(parts) >= 2:
+        company_name = parts[0]
+    else:
+        company_name = parts[0]
 
     # 面经类型走专用写入器
     if data_type == "interviews":

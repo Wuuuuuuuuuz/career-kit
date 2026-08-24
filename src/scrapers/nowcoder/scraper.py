@@ -1,11 +1,16 @@
-"""牛客网面经 Scraper——Playwright 拦截 XHR 获取搜索结果。
+"""牛客网面经 Scraper——Playwright DOM 抓取搜索结果 + 详情页内容。
 
 数据类型：面经（interviews），写入 dev/knowledge/interviews/nowcoder/
-参考实现：Crawl4NK (https://github.com/z0l0y/Crawl4NK)
 
-API 端点（经浏览器验证）：
-- 搜索：POST https://gw-c.nowcoder.com/api/sparta/pc/search
-- 详情：GET  https://gw-c.nowcoder.com/api/sparta/detail/{api_type}/detail/{detail_id}
+搜索策略：
+- URL: https://www.nowcoder.com/search/all?query={query}&type=all&subType=818
+- subType=818 是面经筛选参数，过滤掉非面经内容
+- 从搜索结果页 DOM 提取 discuss URL 列表
+- 返回标题/URL/摘要给 LLM，由 LLM 决定哪些需要查看详情
+
+详情策略：
+- 直接访问 discuss 页面
+- 从 `.nc-slate-editor-content` 提取全文（SSR 渲染，无需登录）
 
 WAF 说明：gw-c.nowcoder.com 有阿里云 WAF，需真实浏览器指纹才能通过。
 """
@@ -14,20 +19,18 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import quote
 
 from ..base import CompanyScraper
 
-# API 端点
-SEARCH_API = "https://gw-c.nowcoder.com/api/sparta/pc/search"
-DETAIL_API = "https://gw-c.nowcoder.com/api/sparta/detail/{api_type}/detail/{detail_id}"
-SEARCH_URL = "https://www.nowcoder.com/search/all?query={query}&type=all"
+SEARCH_URL = "https://www.nowcoder.com/search/all?query={query}&type=all&subType=818"
 
 
 class Scraper(CompanyScraper):
     """牛客网面经 Scraper。
 
-    search: Playwright 加载搜索页 → 拦截 XHR → 返回面经列表
-    get_detail: Playwright 调用详情 API → 返回面经全文
+    search: Playwright 打开搜索页 → DOM 提取面经列表 → 返回标题/URL
+    get_detail: Playwright 访问详情页 → 提取 .nc-slate-editor-content 全文
     缓存: 搜索结果 1 小时，详情 24 小时
     知识库写入: 面经格式，写入 interviews/nowcoder/
     """
@@ -45,18 +48,34 @@ class Scraper(CompanyScraper):
         return "nowcoder.com" in url
 
     def search(self, **kwargs: Any) -> list[dict[str, Any]]:
-        """搜索牛客网面经。"""
+        """搜索牛客网面经。
+
+        Args:
+            keyword: 搜索关键词（如 "AI Agent"、"面经"）
+            filter_company: 公司名（如 "字节跳动"），会拼接到搜索词中
+            is_intern: 是否搜索实习（True 时追加 "实习" 关键词）
+            order: 排序方式（create=最新, quality=最热）
+            page: 页码
+            limit: 返回数量上限
+        """
         keyword = kwargs.get("keyword", "")
-        company = kwargs.get("company", "")
+        company = kwargs.get("filter_company", "")
+        is_intern = kwargs.get("is_intern", False)
         order = kwargs.get("order", "create")
         page = kwargs.get("page", 1)
         limit = kwargs.get("limit", 20)
 
-        query = keyword
+        # 构造搜索词：公司 + 关键词 + 实习/开发
+        parts = []
         if company and company not in keyword:
-            query = f"{company} {keyword}" if keyword else company
+            parts.append(company)
+        if keyword:
+            parts.append(keyword)
+        if is_intern and "实习" not in keyword:
+            parts.append("实习")
 
-        if not query.strip():
+        query = " ".join(parts).strip()
+        if not query:
             return [{"error": "搜索关键词不能为空"}]
 
         # 查缓存
@@ -66,7 +85,7 @@ class Scraper(CompanyScraper):
         if cached is not None:
             return cached[:limit]
 
-        # 抓取
+        # Playwright DOM 抓取
         results = self._search_via_playwright(query=query, order=order, page=page, limit=limit)
 
         # 缓存成功结果
@@ -76,20 +95,19 @@ class Scraper(CompanyScraper):
         return results[:limit]
 
     def get_detail(self, url: str) -> dict[str, Any]:
-        """获取面经详情。"""
-        detail_id, api_type = self._parse_url(url)
-        if not detail_id:
-            return {"error": f"无法从 URL 提取 ID: {url}"}
+        """获取面经详情全文。"""
+        if "nowcoder.com" not in url:
+            return {"error": f"非牛客网 URL: {url}"}
 
         # 查缓存
         detail_cache = self._make_cache("detail")
-        key = self._cache_key(detail_id=detail_id, api_type=api_type)
+        key = self._cache_key(url=url)
         cached = detail_cache.get(key)
         if cached is not None:
             return cached
 
-        # 抓取详情
-        result = self._fetch_detail_via_playwright(detail_id, api_type, url)
+        # Playwright 抓取详情页
+        result = self._fetch_detail_via_playwright(url)
 
         # 缓存成功结果
         if result and not result.get("error"):
@@ -111,7 +129,8 @@ class Scraper(CompanyScraper):
         browser = p.chromium.launch(
             headless=True,
             channel="msedge",
-            args=["--disable-blink-features=AutomationControlled"],
+            args=["--disable-blink-features=AutomationControlled", "--no-proxy-server"],
+            proxy={"server": "direct://"},
         )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -124,203 +143,133 @@ class Scraper(CompanyScraper):
         return p, browser, context
 
     def _search_via_playwright(self, query: str, order: str, page: int, limit: int) -> list[dict[str, Any]]:
-        """通过 Playwright 拦截 XHR 获取搜索结果。"""
-        from urllib.parse import quote
-
-        captured_records: list[dict] = []
-
-        def handle_response(response):
-            """拦截搜索 API 的 XHR 响应。"""
-            if SEARCH_API not in response.url:
-                return
-            try:
-                body = response.json()
-                if body.get("success") and "data" in body:
-                    records = body["data"].get("records", [])
-                    captured_records.extend(records)
-            except Exception:
-                pass
-
+        """通过 Playwright DOM 抓取搜索结果页。"""
         search_url = SEARCH_URL.format(query=quote(query))
+        if page > 1:
+            search_url += f"&page={page}"
 
         try:
             p, browser, context = self._launch_browser()
             page_obj = context.new_page()
-            page_obj.on("response", handle_response)
 
-            # 访问搜索页（会触发 XHR）
-            page_obj.goto(search_url, wait_until="networkidle", timeout=30000)
-            page_obj.wait_for_timeout(2000)
+            page_obj.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+            page_obj.wait_for_timeout(3000)  # 等待 JS 渲染
+
+            # 从 DOM 提取搜索结果
+            results = page_obj.evaluate("""
+                () => {
+                    const items = [];
+                    // 搜索结果卡片的链接
+                    const links = document.querySelectorAll('a[href*="/discuss/"]');
+                    for (const link of links) {
+                        const href = link.getAttribute('href');
+                        if (!href || !href.includes('/discuss/')) continue;
+
+                        // 找到最近的父容器获取标题和摘要
+                        const container = link.closest('.nc-search-result-item')
+                            || link.closest('.search-result-item')
+                            || link.closest('[class*="search"]')
+                            || link.parentElement?.parentElement;
+
+                        // 标题：链接文本或容器内的标题元素
+                        let title = link.textContent?.trim() || '';
+                        if (!title && container) {
+                            const titleEl = container.querySelector('h3, h2, .title, [class*="title"]');
+                            title = titleEl?.textContent?.trim() || '';
+                        }
+
+                        // 摘要：容器内的描述文本
+                        let snippet = '';
+                        if (container) {
+                            const descEl = container.querySelector('.content, .desc, [class*="content"], [class*="desc"], [class*="summary"]');
+                            if (descEl && descEl !== link) {
+                                snippet = descEl.textContent?.trim() || '';
+                            }
+                        }
+
+                        // 构造完整 URL
+                        const fullUrl = href.startsWith('http') ? href : 'https://www.nowcoder.com' + href;
+
+                        // 避免重复
+                        if (!items.find(i => i.url === fullUrl) && title) {
+                            items.push({
+                                title: title.substring(0, 200),
+                                url: fullUrl,
+                                snippet: snippet.substring(0, 300),
+                            });
+                        }
+                    }
+                    return items;
+                }
+            """)
 
             browser.close()
             p.stop()
         except Exception as e:
             return [{"error": f"Playwright 执行失败: {e}"}]
 
-        if not captured_records:
-            return [{"error": "未能拦截到搜索 API 响应"}]
+        if not results:
+            return [{"error": "未找到相关面经", "query": query}]
 
-        # 解析结果
-        results = []
-        for record in captured_records:
-            item = self._parse_search_record(record)
-            if item:
-                results.append(item)
-            if len(results) >= limit:
-                break
+        # 格式化结果
+        formatted = []
+        for item in results[:limit]:
+            title = item.get("title", "")
+            company = self._extract_company(title)
+            position = self._extract_position(title)
 
-        return results
+            formatted.append({
+                "title": title,
+                "url": item["url"],
+                "company": company,
+                "position": position,
+                "snippet": item.get("snippet", ""),
+                "source": "nowcoder",
+            })
 
-    def _fetch_detail_via_playwright(self, detail_id: str, api_type: str, url: str) -> dict[str, Any]:
-        """通过 Playwright 调用详情 API。"""
-        api_url = DETAIL_API.format(api_type=api_type, detail_id=detail_id)
-        captured_data: dict = {}
+        return formatted
 
-        def handle_response(response):
-            if api_url not in response.url and detail_id not in response.url:
-                return
-            try:
-                body = response.json()
-                if "data" in body:
-                    captured_data["data"] = body["data"]
-            except Exception:
-                pass
-
+    def _fetch_detail_via_playwright(self, url: str) -> dict[str, Any]:
+        """通过 Playwright 访问详情页，从 DOM 提取面经全文。"""
         try:
             p, browser, context = self._launch_browser()
             page_obj = context.new_page()
-            page_obj.on("response", handle_response)
 
-            # 先访问首页建立 cookie
-            page_obj.goto("https://www.nowcoder.com/", wait_until="domcontentloaded", timeout=15000)
-            page_obj.wait_for_timeout(1000)
+            page_obj.goto(url, wait_until="domcontentloaded", timeout=30000)
+            page_obj.wait_for_timeout(2000)
 
-            # 通过 JS fetch 调用详情 API
-            result = page_obj.evaluate("""
-                async (apiUrl) => {
-                    const resp = await fetch(apiUrl, {
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest',
-                        }
-                    });
-                    return await resp.json();
+            # 从 DOM 提取内容
+            data = page_obj.evaluate("""
+                () => {
+                    // 标题：优先 h1
+                    const h1 = document.querySelector('h1');
+                    const title = h1?.textContent?.trim() || '';
+
+                    // 正文内容
+                    const contentEl = document.querySelector('.nc-slate-editor-content')
+                        || document.querySelector('.post-content-box');
+                    const content = contentEl?.textContent?.trim() || '';
+
+                    // 作者
+                    const authorEl = document.querySelector('.content-user-info .name');
+                    const author = authorEl?.textContent?.trim() || '';
+
+                    return { title, content, author };
                 }
-            """, api_url)
+            """)
 
             browser.close()
             p.stop()
         except Exception as e:
-            return {"error": f"详情 API 请求失败: {e}"}
+            return {"error": f"详情页抓取失败: {e}"}
 
-        detail_data = result.get("data") if result else captured_data.get("data")
-        if not detail_data:
-            return {"error": "详情 API 返回空数据"}
+        if not data or not data.get("content"):
+            return {"error": "未找到面经内容", "url": url}
 
-        return self._format_detail(detail_data, url, api_type)
-
-    # === 解析方法 ===
-
-    def _parse_search_record(self, record: dict) -> dict[str, Any] | None:
-        """解析搜索结果中的一条记录。
-
-        API 结构：
-        record.data = {contentId, contentType, contentData, userBrief, ...}
-        - contentType 250: contentData 有 title/content/uuid
-        - contentType 74:  contentData 为空，需详情 API
-        """
-        record_data = record.get("data", {})
-        if not record_data:
-            return None
-
-        content_type = record_data.get("contentType", 0)
-        content_data = record_data.get("contentData", {})
-        user_brief = record_data.get("userBrief", {})
-        content_id = record_data.get("contentId", "")
-
-        # 从 userBrief 提取公司和岗位
-        identity_list = user_brief.get("identityList") or []
-        company = identity_list[0].get("companyName", "") if identity_list else ""
-        position = identity_list[0].get("jobName", "") if identity_list else ""
-
-        if content_type == 250 and content_data:
-            # moment 类型，数据在 contentData 中
-            uuid = content_data.get("uuid", "")
-            title = content_data.get("title", "")
-            content = content_data.get("content", "")
-            created_at = content_data.get("createTime", "")
-
-            if not company:
-                company = self._extract_company(title + content)
-            if not position:
-                position = self._extract_position_from_text(title)
-
-            return {
-                "title": title or self._extract_title_from_content(content),
-                "url": f"https://www.nowcoder.com/feed/main/detail/{uuid}",
-                "company": company,
-                "position": position,
-                "content": self._truncate(content, 500),
-                "source": "nowcoder",
-                "detail_id": uuid,
-                "api_type": "moment-data",
-                "author": user_brief.get("nickname", ""),
-                "created_time": self._parse_timestamp(created_at),
-            }
-        elif content_type == 74:
-            # discuss 类型，contentData 为空，用 contentId 构造 URL
-            return {
-                "title": record.get("title") or f"面经 #{content_id}",
-                "url": f"https://www.nowcoder.com/discuss/{content_id}",
-                "company": company,
-                "position": position,
-                "content": "",
-                "source": "nowcoder",
-                "detail_id": str(content_id),
-                "api_type": "content-data",
-                "author": user_brief.get("nickname", ""),
-                "created_time": "",
-            }
-        else:
-            # 未知类型，尝试通用解析
-            title = content_data.get("title", "") if content_data else ""
-            return {
-                "title": title or f"帖子 #{content_id}",
-                "url": f"https://www.nowcoder.com/discuss/{content_id}",
-                "company": company,
-                "position": position,
-                "content": "",
-                "source": "nowcoder",
-                "detail_id": str(content_id),
-                "api_type": "content-data",
-                "author": user_brief.get("nickname", ""),
-                "created_time": "",
-            }
-
-    def _format_detail(self, data: dict, url: str, api_type: str) -> dict[str, Any]:
-        """格式化详情数据为标准面经格式。"""
-        if api_type == "moment-data":
-            moment = data.get("momentData", data)
-            content = moment.get("content", "")
-            title = moment.get("title", "")
-            created_time = moment.get("createTime", "")
-            user_brief = data.get("userBrief", {})
-        else:
-            content_data = data.get("contentData", data)
-            content = content_data.get("content", "")
-            title = content_data.get("title", "")
-            created_time = content_data.get("createTime", "")
-            user_brief = data.get("userBrief", {})
-
-        identity_list = user_brief.get("identityList") or []
-        company = identity_list[0].get("companyName", "") if identity_list else ""
-        position = identity_list[0].get("jobName", "") if identity_list else ""
-
-        if not company:
-            company = self._extract_company(title + content)
-        if not position:
-            position = self._extract_position_from_text(title)
-
+        title = data.get("title", "")
+        content = data.get("content", "")
+        company = self._extract_company(title + content)
+        position = self._extract_position(title + content)
         round_name = self._extract_round(title + content)
 
         return {
@@ -331,37 +280,16 @@ class Scraper(CompanyScraper):
             "content": content,
             "source": "nowcoder",
             "url": url,
-            "date": self._parse_timestamp(created_time),
-            "author": user_brief.get("nickname", ""),
+            "date": "",
+            "author": data.get("author", ""),
         }
 
-    @staticmethod
-    def _parse_url(url: str) -> tuple[str, str]:
-        """从 URL 解析 detail_id 和 api_type。"""
-        m = re.search(r"/discuss/(\d+)", url)
-        if m:
-            return m.group(1), "content-data"
-
-        m = re.search(r"/detail/([a-f0-9]+)", url)
-        if m:
-            return m.group(1), "moment-data"
-
-        return "", ""
-
-    @staticmethod
-    def _extract_title_from_content(content: str) -> str:
-        if not content:
-            return "无标题"
-        first_line = content.split("\n")[0].strip()
-        first_line = re.sub(r'^#+\s*', '', first_line)
-        if len(first_line) > 80:
-            first_line = first_line[:80] + "..."
-        return first_line or "无标题"
+    # === 提取方法 ===
 
     @staticmethod
     def _extract_company(text: str) -> str:
         companies = [
-            "字节跳动", "腾讯", "阿里", "阿里巴巴", "百度", "美团", "京东",
+            "字节跳动", "字节", "腾讯", "阿里", "阿里巴巴", "百度", "美团", "京东",
             "华为", "小米", "网易", "快手", "拼多多", "滴滴", "bilibili",
             "B站", "小红书", "蚂蚁", "蚂蚁集团", "微软", "Google", "苹果",
             "亚马逊", "Apple", "Meta", "商汤", "旷视", "科大讯飞", "大疆",
@@ -373,11 +301,11 @@ class Scraper(CompanyScraper):
         return ""
 
     @staticmethod
-    def _extract_position_from_text(text: str) -> str:
+    def _extract_position(text: str) -> str:
         position_keywords = [
             "前端", "后端", "客户端", "服务端", "全栈",
             "Java", "Python", "Go", "C++", "Rust",
-            "算法", "机器学习", "深度学习", "AI", "NLP", "CV",
+            "算法", "机器学习", "深度学习", "AI", "Agent", "NLP", "CV",
             "数据", "大数据", "云计算", "安全",
             "产品", "运营", "测试", "运维", "DevOps",
             "Android", "iOS", "嵌入式",
@@ -402,20 +330,11 @@ class Scraper(CompanyScraper):
         return ""
 
     @staticmethod
-    def _parse_timestamp(ts: Any) -> str:
-        if not ts:
-            return ""
-        try:
-            from datetime import datetime
-            if isinstance(ts, (int, float)):
-                if ts > 1e12:
-                    ts = ts / 1000
-                return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
-            return str(ts)[:10]
-        except Exception:
-            return str(ts)[:10]
-
-    @staticmethod
-    def _truncate(text: str, max_len: int) -> str:
-        text = text.replace("\n", " ").strip()
-        return text[:max_len] + "..." if len(text) > max_len else text
+    def _extract_title_from_content(content: str) -> str:
+        if not content:
+            return "无标题"
+        first_line = content.split("\n")[0].strip()
+        first_line = re.sub(r'^#+\s*', '', first_line)
+        if len(first_line) > 80:
+            first_line = first_line[:80] + "..."
+        return first_line or "无标题"

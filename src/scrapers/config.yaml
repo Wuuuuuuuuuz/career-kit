@@ -47,10 +47,13 @@ scrapers:
     data_type: interviews
     params:
       keyword:
-        description: 搜索关键词（如 "面经"、"AI Agent"、"字节跳动"）
+        description: 搜索关键词（如 "面经"、"AI Agent"、"Agent 开发"）
         required: false
-      company:
-        description: 按公司筛选（如 "字节跳动"、"腾讯"）
+      filter_company:
+        description: 按公司筛选（如 "字节跳动"、"腾讯"），会自动拼接到搜索词
+        required: false
+      is_intern:
+        description: 是否搜索实习岗位（true 时追加"实习"关键词）
         required: false
       order:
         description: "排序方式：create=最新(默认), quality=最热"

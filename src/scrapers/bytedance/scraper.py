@@ -142,9 +142,14 @@ class Scraper(CompanyScraper):
 
     def _search_via_playwright(self, **params: Any) -> list[dict[str, Any]]:
         """通过 Playwright 拦截 XHR 获取搜索结果。"""
+        import os
         import random
         from playwright.sync_api import sync_playwright
         from urllib.parse import quote
+
+        # 清除代理环境变量
+        for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+            os.environ.pop(k, None)
 
         keyword = params["keyword"]
         city = params["city"]
@@ -201,10 +206,13 @@ class Scraper(CompanyScraper):
             with sync_playwright() as p:
                 browser = p.chromium.launch(
                     headless=True,
+                    channel="msedge",
                     args=[
                         "--disable-blink-features=AutomationControlled",
                         "--disable-features=IsolateOrigins,site-per-process",
+                        "--no-proxy-server",
                     ],
+                    proxy={"server": "direct://"},
                 )
                 # 随机化 viewport 和 user-agent
                 viewports = [
