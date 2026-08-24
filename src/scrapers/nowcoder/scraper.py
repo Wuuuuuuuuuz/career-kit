@@ -101,6 +101,11 @@ class Scraper(CompanyScraper):
 
     def _launch_browser(self):
         """启动 Playwright 浏览器，使用系统 Edge。"""
+        import os
+        # 清除代理环境变量，避免 SOCKS5 代理干扰浏览器连接
+        for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+            os.environ.pop(k, None)
+
         from playwright.sync_api import sync_playwright
         p = sync_playwright().start()
         browser = p.chromium.launch(
