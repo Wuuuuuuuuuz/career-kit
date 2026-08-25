@@ -18,6 +18,88 @@ def _deep_merge(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
     return base
 
 
+class TaskStatus(str):
+    """任务状态。"""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    OVERDUE = "overdue"
+    SKIPPED = "skipped"
+
+
+class Task(BaseModel):
+    """任务模型。"""
+    id: str
+    name: str
+    description: str = ""
+    phase_id: str = ""
+    milestone_id: str = ""
+    estimated_days: float = 1
+    deadline: str = ""
+    status: str = TaskStatus.PENDING
+    priority: str = "medium"  # high | medium | low
+    started_at: str | None = None
+    completed_at: str | None = None
+
+    def start(self) -> None:
+        """开始任务。"""
+        self.status = TaskStatus.IN_PROGRESS
+        self.started_at = datetime.now().isoformat()
+
+    def complete(self) -> None:
+        """完成任务。"""
+        self.status = TaskStatus.COMPLETED
+        self.completed_at = datetime.now().isoformat()
+
+    def skip(self, reason: str = "") -> None:
+        """跳过任务。"""
+        self.status = TaskStatus.SKIPPED
+        self.completed_at = datetime.now().isoformat()
+        if reason:
+            self.description = f"{self.description} [跳过原因: {reason}]"
+
+    def is_overdue(self) -> bool:
+        """检查任务是否超期。"""
+        if self.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED):
+            return False
+        if not self.deadline:
+            return False
+        try:
+            deadline_dt = datetime.fromisoformat(self.deadline)
+            return datetime.now() > deadline_dt
+        except ValueError:
+            return False
+
+    def days_overdue(self) -> float:
+        """计算超期天数。"""
+        if not self.is_overdue():
+            return 0
+        try:
+            deadline_dt = datetime.fromisoformat(self.deadline)
+            delta = datetime.now() - deadline_dt
+            return delta.total_seconds() / 86400
+        except ValueError:
+            return 0
+
+
+class CheckIn(BaseModel):
+    """打卡记录。"""
+    task_id: str
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    status: str = TaskStatus.COMPLETED
+    notes: str = ""
+
+
+class Adjustment(BaseModel):
+    """调整记录。"""
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    trigger: str = ""
+    trigger_type: str = ""  # stage_audit | event | proactive
+    reason: str = ""
+    changes: list[dict[str, Any]] = Field(default_factory=list)
+    approved: bool = True
+
+
 class PlanVersion(BaseModel):
     """计划版本快照。"""
     version: int
@@ -48,6 +130,11 @@ class CareerProfile(BaseModel):
 
     # TODO: 后续扩展 - 支持多个目标 JD 对比
     target_jd: dict[str, Any] = Field(default_factory=dict, description="目标岗位 JD 解析结果")
+
+    # Phase 2: 任务管理
+    tasks: list[Task] = Field(default_factory=list, description="任务列表")
+    checkins: list[CheckIn] = Field(default_factory=list, description="打卡记录")
+    adjustments: list[Adjustment] = Field(default_factory=list, description="调整历史")
 
     plan_history: list[PlanVersion] = Field(default_factory=list, description="计划版本历史")
     journey: list[JourneyEntry] = Field(default_factory=list, description="学习轨迹——记录每次交互的知识和产出")
@@ -93,4 +180,34 @@ class CareerProfile(BaseModel):
     def append_journey(self, entry: JourneyEntry) -> None:
         """追加学习轨迹条目并更新版本。"""
         self.journey.append(entry)
+        self.touch()
+
+    def get_task(self, task_id: str) -> Task | None:
+        """获取指定 ID 的任务。"""
+        for task in self.tasks:
+            if task.id == task_id:
+                return task
+        return None
+
+    def get_today_tasks(self) -> list[Task]:
+        """获取今日待办任务（pending 或 in_progress）。"""
+        return [t for t in self.tasks if t.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)]
+
+    def get_overdue_tasks(self) -> list[Task]:
+        """获取超期任务。"""
+        return [t for t in self.tasks if t.is_overdue()]
+
+    def add_task(self, task: Task) -> None:
+        """添加任务。"""
+        self.tasks.append(task)
+        self.touch()
+
+    def add_checkin(self, checkin: CheckIn) -> None:
+        """添加打卡记录。"""
+        self.checkins.append(checkin)
+        self.touch()
+
+    def add_adjustment(self, adjustment: Adjustment) -> None:
+        """添加调整记录。"""
+        self.adjustments.append(adjustment)
         self.touch()

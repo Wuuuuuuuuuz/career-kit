@@ -921,6 +921,338 @@ def fetch_jd_detail(url: str, company: str = "") -> str:
     return "\n".join(lines)
 
 
+# ============================================================
+# Phase 2: 任务管理 Tools
+# ============================================================
+
+
+@mcp.tool()
+def generate_tasks() -> str:
+    """从路线图生成任务列表。
+
+    何时调用：在 generate_roadmap 和 generate_schedule 之后调用，将路线图转化为可执行的任务。
+    前置条件：档案中已有路线图（plan.roadmap）。
+    后续步骤：调用 get_today_tasks 获取今日任务。
+    """
+    from .tools.task_manager import (
+        create_tasks_from_roadmap,
+        format_task_list,
+        set_deadlines,
+    )
+
+    profile = load_profile()
+
+    if not profile.plan.get("roadmap") and not profile.plan.get("phases"):
+        return error_response(
+            "MISSING_DATA",
+            "档案中没有路线图，请先调用 generate_roadmap。",
+            {"section": "plan"},
+        )
+
+    # 清空旧任务
+    profile.tasks = []
+
+    # 从路线图生成任务
+    tasks = create_tasks_from_roadmap(profile)
+
+    # 设置截止日期
+    tasks = set_deadlines(tasks)
+
+    # 添加到档案
+    for task in tasks:
+        profile.add_task(task)
+
+    save_profile(profile)
+
+    return {
+        "message": f"已从路线图生成 {len(tasks)} 个任务。",
+        "tasks": format_task_list(tasks, "生成的任务"),
+        "next_steps": ["get_today_tasks"],
+        "context": {"phase": "tasks_generated", "task_count": len(tasks)},
+    }
+
+
+@mcp.tool()
+def get_today_tasks() -> str:
+    """获取今日待办任务。
+
+    何时调用：用户想查看今天需要做什么时调用。
+    返回待办任务列表，包括进行中和待办的任务。
+    """
+    from .tools.task_manager import format_task_list, format_progress_overview
+
+    profile = load_profile()
+
+    if not profile.tasks:
+        return {
+            "message": "暂无任务。请先调用 generate_tasks 从路线图生成任务。",
+            "next_steps": ["generate_tasks"],
+            "context": {"phase": "no_tasks"},
+        }
+
+    today_tasks = profile.get_today_tasks()
+    overdue_tasks = profile.get_overdue_tasks()
+
+    lines = []
+
+    if overdue_tasks:
+        lines.append(format_task_list(overdue_tasks, "⚠️ 超期任务"))
+        lines.append("")
+
+    lines.append(format_task_list(today_tasks, "📋 今日任务"))
+    lines.append("")
+    lines.append(format_progress_overview(profile))
+
+    # 打卡提示
+    if today_tasks:
+        lines.append("---")
+        lines.append("完成任务后，请调用 checkin_task 打卡。")
+        lines.append(f"示例：checkin_task(task_id=\"{today_tasks[0].id}\")")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> str:
+    """打卡任务。
+
+    何时调用：用户完成或跳过某个任务时调用。
+    会自动检查超期情况并触发洞察。
+
+    Args:
+        task_id: 任务 ID（从 get_today_tasks 获取）
+        status: 打卡状态（completed 或 skipped）
+        notes: 备注（可选）
+    """
+    from .tools.task_manager import (
+        add_depth_tasks,
+        check_overdue_tasks,
+        checkin_task as do_checkin,
+        compress_schedule,
+        format_progress_overview,
+    )
+    from .tools.insight import check_stage_completion
+
+    profile = load_profile()
+
+    try:
+        profile, checkin = do_checkin(profile, task_id, status, notes)
+    except ValueError as e:
+        return error_response("MISSING_DATA", str(e), {"task_id": task_id})
+
+    # 检查是否有超期任务
+    overdue_tasks = check_overdue_tasks(profile)
+
+    # 检查阶段是否完成
+    stage_completed = check_stage_completion(profile)
+
+    lines = []
+    task = profile.get_task(task_id)
+    lines.append(f"✅ 已打卡：{task.name if task else task_id}")
+    lines.append("")
+
+    # 超期提醒
+    if overdue_tasks:
+        lines.append(f"⚠️ 有 {len(overdue_tasks)} 个任务超期：")
+        for t in overdue_tasks:
+            lines.append(f"- {t.name}（超期 {t.days_overdue():.1f} 天）")
+        lines.append("")
+        lines.append("建议调用 trigger_insight 检查是否需要调整计划。")
+
+    # 阶段完成提醒
+    if stage_completed:
+        lines.append("")
+        lines.append("🎯 恭喜！你已完成一个阶段。建议调用 trigger_insight 进行阶段审计。")
+
+    # 提前完成 - 添加深度任务
+    if status == "completed" and task and not task.is_overdue():
+        depth_tasks = add_depth_tasks(profile, task_id)
+        if depth_tasks:
+            lines.append("")
+            lines.append(f"💡 提前完成！已添加深度任务：{depth_tasks[0].name}")
+
+    save_profile(profile)
+
+    lines.append("")
+    lines.append(format_progress_overview(profile))
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def trigger_insight(trigger_type: str = "proactive", event_description: str = "") -> str:
+    """触发洞察检查。
+
+    何时调用：
+    - 用户完成阶段后（trigger_type="stage_audit"）
+    - 用户报告事件时（trigger_type="event"）
+    - 定期检查进度时（trigger_type="proactive"）
+
+    Args:
+        trigger_type: 触发类型（stage_audit, event, proactive）
+        event_description: 事件描述（当 trigger_type 为 event 时必填）
+    """
+    from .tools.insight import (
+        apply_adjustment,
+        build_insight_prompt,
+        format_insight_report,
+        parse_insight_response,
+    )
+
+    profile = load_profile()
+
+    if not profile.tasks:
+        return {
+            "message": "暂无任务，请先调用 generate_tasks。",
+            "next_steps": ["generate_tasks"],
+            "context": {"phase": "no_tasks"},
+        }
+
+    # 构建 prompt
+    prompt = build_insight_prompt(profile, trigger_type, event_description)
+
+    return {
+        "message": "请根据以下 prompt 进行洞察分析：",
+        "prompt": prompt,
+        "instructions": (
+            "请将 prompt 发送给 LLM，然后调用 apply_insight 将结果应用到档案。\n"
+            "示例：apply_insight(insight_json='{\"status\":\"on_track\", ...}')"
+        ),
+        "next_steps": ["apply_insight"],
+        "context": {"phase": "insight_ready", "trigger_type": trigger_type},
+    }
+
+
+@mcp.tool()
+def apply_insight(insight_json: str) -> str:
+    """应用洞察分析结果到档案。
+
+    何时调用：在 trigger_insight 之后，LLM 分析完成后调用。
+
+    Args:
+        insight_json: LLM 返回的洞察分析 JSON
+    """
+    from .tools.insight import (
+        apply_adjustment,
+        format_insight_report,
+        parse_insight_response,
+    )
+
+    profile = load_profile()
+
+    try:
+        insight_result = json.loads(insight_json)
+    except json.JSONDecodeError as e:
+        return error_response("INVALID_JSON", f"洞察 JSON 解析失败：{e}", {"raw": insight_json[:200]})
+
+    # 应用调整
+    if insight_result.get("adjustment_needed"):
+        profile, adjustment = apply_adjustment(profile, insight_result)
+        save_profile(profile)
+
+        return {
+            "message": "已应用调整。",
+            "report": format_insight_report(insight_result),
+            "adjustment": adjustment.model_dump(),
+            "context": {"phase": "adjustment_applied"},
+        }
+    else:
+        return {
+            "message": "无需调整。",
+            "report": format_insight_report(insight_result),
+            "context": {"phase": "insight_complete"},
+        }
+
+
+@mcp.tool()
+def get_progress() -> str:
+    """获取进度概览。
+
+    何时调用：用户想查看整体进度时调用。
+    返回任务统计、打卡记录、调整历史。
+    """
+    from .tools.task_manager import format_progress_overview
+
+    profile = load_profile()
+
+    if not profile.tasks:
+        return {
+            "message": "暂无任务。请先调用 generate_tasks 从路线图生成任务。",
+            "next_steps": ["generate_tasks"],
+            "context": {"phase": "no_tasks"},
+        }
+
+    lines = []
+    lines.append(format_progress_overview(profile))
+
+    # 调整历史
+    if profile.adjustments:
+        lines.append("## 📝 调整历史")
+        for adj in profile.adjustments[-5:]:
+            lines.append(f"- {adj.timestamp[:10]}：{adj.reason}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def suggest_adjustment() -> str:
+    """AI 提出调整建议。
+
+    何时调用：用户想让 AI 检查进度并提出调整建议时调用。
+    返回调整建议，用户确认后可调用 apply_adjustment 应用。
+    """
+    from .tools.task_manager import check_overdue_tasks, compress_schedule
+
+    profile = load_profile()
+
+    if not profile.tasks:
+        return {
+            "message": "暂无任务，请先调用 generate_tasks。",
+            "next_steps": ["generate_tasks"],
+            "context": {"phase": "no_tasks"},
+        }
+
+    # 检查超期任务
+    overdue_tasks = check_overdue_tasks(profile)
+
+    if not overdue_tasks:
+        return {
+            "message": "所有任务都在计划内，无需调整。",
+            "context": {"phase": "no_adjustment_needed"},
+        }
+
+    # 计算超期天数
+    total_overdue = sum(t.days_overdue() for t in overdue_tasks)
+
+    # 压缩后续任务
+    changes = compress_schedule(profile, total_overdue)
+
+    # 保存调整记录
+    adjustment = Adjustment(
+        trigger=f"{len(overdue_tasks)} 个任务超期",
+        trigger_type="proactive",
+        reason=f"超期 {total_overdue:.1f} 天，压缩后续任务",
+        changes=changes,
+        approved=True,
+    )
+    profile.add_adjustment(adjustment)
+    save_profile(profile)
+
+    lines = []
+    lines.append("## 🔄 调整建议")
+    lines.append("")
+    lines.append(f"发现 {len(overdue_tasks)} 个超期任务，共超期 {total_overdue:.1f} 天。")
+    lines.append("")
+    lines.append("### 调整方案")
+    for change in changes:
+        lines.append(f"- {change['task_name']}：{change['old_days']}天 → {change['new_days']}天")
+    lines.append("")
+    lines.append("已自动应用调整。")
+
+    return "\n".join(lines)
+
+
 def main():
     mcp.run()
 
