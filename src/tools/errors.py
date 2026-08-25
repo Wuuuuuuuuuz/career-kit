@@ -2,10 +2,14 @@
 
 所有 MCP tool 的错误都通过本模块抛出和格式化，
 确保返回给 LLM 的错误格式一致、语义清晰。
+
+注意：所有函数返回 JSON 字符串而非 dict。
+MCP 工具的返回类型注解为 str，返回 dict 会触发 FastMCP schema 校验失败。
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -63,23 +67,19 @@ _ERROR_REGISTRY: dict[str, type[CareerKitError]] = {
 }
 
 
-def error_response(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
-    """返回标准错误格式。"""
-    return {
-        "isError": True,
-        "code": code,
-        "message": message,
-        "details": details or {},
-    }
+def error_response(code: str, message: str, details: dict[str, Any] | None = None) -> str:
+    """返回标准错误格式（JSON 字符串）。"""
+    return json.dumps(
+        {
+            "isError": True,
+            "code": code,
+            "message": message,
+            "details": details or {},
+        },
+        ensure_ascii=False,
+    )
 
 
-def exception_to_response(exc: CareerKitError) -> dict[str, Any]:
-    """将 CareerKitError 异常转为标准错误响应。"""
+def exception_to_response(exc: CareerKitError) -> str:
+    """将 CareerKitError 异常转为标准错误响应（JSON 字符串）。"""
     return error_response(exc.code, exc.message, exc.details)
-
-
-def raise_or_return(result: Any) -> Any:
-    """如果 result 是 CareerKitError 实例，转为标准 dict 返回；否则原样返回。"""
-    if isinstance(result, CareerKitError):
-        return exception_to_response(result)
-    return result

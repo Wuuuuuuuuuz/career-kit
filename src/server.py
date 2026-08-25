@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -38,7 +39,7 @@ from .tools.profile import (
     save_plan_snapshot,
     save_profile,
 )
-from .models import JourneyEntry
+from .models import Adjustment, JourneyEntry
 from .tools.resume_parser import extract_text
 from .tools.session import get_welcome_message
 from .scrapers import list_scrapers, search_company_jobs, get_job_detail
@@ -114,6 +115,15 @@ def _parse_json_param(raw: str, field_name: str = "参数") -> dict:
             {"raw": raw[:200]},
         )
     return data
+
+
+def _json(obj: Any) -> str:
+    """将对象序列化为 JSON 字符串。
+
+    MCP 工具返回类型必须是 str，返回 dict 会触发 FastMCP schema 校验失败。
+    所有工具的结构化返回值必须经过本函数。
+    """
+    return json.dumps(obj, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()
@@ -300,7 +310,7 @@ def analyze_gaps() -> str:
     ))
     save_profile(profile)
 
-    return {
+    return _json({
         "methodologies": [ctx1["methodology"], ctx2["methodology"]],
         "profile": ctx1["profile"],
         "existing_journey": [
@@ -309,11 +319,12 @@ def analyze_gaps() -> str:
         ],
         "instructions": (
             "请按照上述方法论指引：\n"
-            "1. 先用 search_market 搜索目标岗位的真实 JD 和同背景案例\n"
-            "2. 基于数据从简历过筛和面试通过两个维度分析差距\n"
-            "3. 调用 save_gap_analysis(gap_json) 保存结构化结果"
+            "1. 先用 fetch_company_jobs 搜索目标企业的真实岗位（先 list_company_jobs 查看可用企业）\n"
+            "2. 用 fetch_jd_detail 获取 JD 全文和同背景案例\n"
+            "3. 基于真实数据从简历过筛和面试通过两个维度分析差距\n"
+            "4. 调用 save_gap_analysis(gap_json) 保存结构化结果"
         ),
-    }
+    })
 
 
 @mcp.tool()
@@ -367,7 +378,7 @@ def save_gap_analysis(gap_json: str) -> str:
     # 格式化报告
     report = format_gap_report(gap_data)
 
-    return {
+    return _json({
         "message": (
             f"差距分析已保存。\n\n{report}\n\n"
             "接下来可以调用 generate_roadmap 生成路线图。"
@@ -378,7 +389,7 @@ def save_gap_analysis(gap_json: str) -> str:
             "match_score": gap_data.get("match_score"),
             "gaps_count": len(gap_data.get("skill_gaps", [])),
         },
-    }
+    })
 
 
 @mcp.tool()
@@ -402,16 +413,16 @@ def generate_roadmap() -> str:
 
     ctx = build_methodology_context("roadmap", profile)
 
-    return {
+    return _json({
         "methodology": ctx["methodology"],
         "profile": ctx["profile"],
         "instructions": (
             "请按照路线图方法论指引：\n"
-            "1. 先用 search_market 搜索目标岗位的真实技能要求\n"
-            "2. 基于差距分析和市场数据，设计分阶段路线图\n"
+            "1. 基于已保存的差距分析（gap）和之前搜索的真实 JD 数据\n"
+            "2. 设计分阶段路线图，每个任务标注来源依据\n"
             "3. 调用 save_roadmap(roadmap_json) 保存结构化结果"
         ),
-    }
+    })
 
 
 @mcp.tool()
@@ -469,14 +480,14 @@ def save_roadmap(roadmap_json: str) -> str:
     # 格式化报告
     report = format_roadmap(parsed)
 
-    return {
+    return _json({
         "message": (
             f"路线图已保存。\n\n{report}\n\n"
             "接下来可以调用 generate_schedule 获取具体日程。"
         ),
         "next_steps": ["generate_schedule"],
         "context": {"phase": "roadmap_saved", "version": profile.version},
-    }
+    })
 
 
 @mcp.tool()
@@ -509,7 +520,7 @@ def generate_schedule(scope: str = "this_week") -> str:
     available_time = _estimate_available_time(profile)
     ctx["profile"]["available_time"] = available_time
 
-    return {
+    return _json({
         "methodology": ctx["methodology"],
         "profile": ctx["profile"],
         "instructions": (
@@ -519,7 +530,7 @@ def generate_schedule(scope: str = "this_week") -> str:
             "2. 按优先级和依赖关系分配到每日时间块\n"
             "3. 调用 save_schedule(schedule_json) 保存结构化结果"
         ),
-    }
+    })
 
 
 @mcp.tool()
@@ -563,15 +574,15 @@ def save_schedule(schedule_json: str) -> str:
     # 格式化报告
     report = format_schedule(parsed)
 
-    return {
+    return _json({
         "message": (
             f"日程表已保存。\n\n{report}\n\n"
             "如需导出 ICS 日历文件，请调用 export_ics。\n"
-            "开始执行后，请调用 track_progress 记录进度。"
+            "开始执行后，请调用 generate_tasks 生成任务列表进行打卡追踪。"
         ),
-        "next_steps": ["export_ics", "track_progress"],
+        "next_steps": ["export_ics", "generate_tasks"],
         "context": {"phase": "schedule_saved", "version": profile.version},
-    }
+    })
 
 
 @mcp.tool()
@@ -1074,12 +1085,12 @@ def generate_tasks() -> str:
 
     save_profile(profile)
 
-    return {
+    return _json({
         "message": f"已从路线图生成 {len(tasks)} 个任务。",
         "tasks": format_task_list(tasks, "生成的任务"),
         "next_steps": ["get_today_tasks"],
         "context": {"phase": "tasks_generated", "task_count": len(tasks)},
-    }
+    })
 
 
 @mcp.tool()
@@ -1094,11 +1105,11 @@ def get_today_tasks() -> str:
     profile = load_profile()
 
     if not profile.tasks:
-        return {
+        return _json({
             "message": "暂无任务。请先调用 generate_tasks 从路线图生成任务。",
             "next_steps": ["generate_tasks"],
             "context": {"phase": "no_tasks"},
-        }
+        })
 
     today_tasks = profile.get_today_tasks()
     overdue_tasks = profile.get_overdue_tasks()
@@ -1216,16 +1227,16 @@ def trigger_insight(trigger_type: str = "proactive", event_description: str = ""
     profile = load_profile()
 
     if not profile.tasks:
-        return {
+        return _json({
             "message": "暂无任务，请先调用 generate_tasks。",
             "next_steps": ["generate_tasks"],
             "context": {"phase": "no_tasks"},
-        }
+        })
 
     # 构建 prompt
     prompt = build_insight_prompt(profile, trigger_type, event_description)
 
-    return {
+    return _json({
         "message": "洞察分析任务已准备。请根据以下 prompt 进行分析，然后调用 apply_insight 应用结果。",
         "prompt": prompt,
         "output_format": {
@@ -1239,7 +1250,7 @@ def trigger_insight(trigger_type: str = "proactive", event_description: str = ""
         },
         "next_steps": ["apply_insight"],
         "context": {"phase": "insight_ready", "trigger_type": trigger_type},
-    }
+    })
 
 
 @mcp.tool()
@@ -1292,18 +1303,18 @@ def apply_insight(insight_json: str) -> str:
         profile, adjustment = apply_adjustment(profile, insight_result)
         save_profile(profile)
 
-        return {
+        return _json({
             "message": "已应用调整。",
             "report": format_insight_report(insight_result),
             "adjustment": adjustment.model_dump(),
             "context": {"phase": "adjustment_applied"},
-        }
+        })
     else:
-        return {
+        return _json({
             "message": "无需调整。",
             "report": format_insight_report(insight_result),
             "context": {"phase": "insight_complete"},
-        }
+        })
 
 
 @mcp.tool()
@@ -1318,11 +1329,11 @@ def get_progress() -> str:
     profile = load_profile()
 
     if not profile.tasks:
-        return {
+        return _json({
             "message": "暂无任务。请先调用 generate_tasks 从路线图生成任务。",
             "next_steps": ["generate_tasks"],
             "context": {"phase": "no_tasks"},
-        }
+        })
 
     lines = []
     lines.append(format_progress_overview(profile))
@@ -1349,20 +1360,20 @@ def suggest_adjustment() -> str:
     profile = load_profile()
 
     if not profile.tasks:
-        return {
+        return _json({
             "message": "暂无任务，请先调用 generate_tasks。",
             "next_steps": ["generate_tasks"],
             "context": {"phase": "no_tasks"},
-        }
+        })
 
     # 检查超期任务
     overdue_tasks = check_overdue_tasks(profile)
 
     if not overdue_tasks:
-        return {
+        return _json({
             "message": "所有任务都在计划内，无需调整。",
             "context": {"phase": "no_adjustment_needed"},
-        }
+        })
 
     # 计算超期天数
     total_overdue = sum(t.days_overdue() for t in overdue_tasks)
