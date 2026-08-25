@@ -1,10 +1,62 @@
 # Career Kit
 
-有真实数据源的 AI 职业陪练。帮你设计最优路线，细化到每天任务，跟着做、打卡，达成目标。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 
-> LLM 使用指南：[llms.txt](llms.txt) — 包含工具说明、工作流程、术语表、对话示例
+> 别再海投了。AI 帮你规划路线、打卡执行、达成目标。
 
-## 它能做什么
+## 你是不是也这样？
+
+**海投 100 份简历，0 个面试。**
+不知道是简历写得不好，还是技能不够，还是投的公司不对。每天打开招聘软件，越看越焦虑。
+
+**想转行，但不知道从哪开始。**
+网上教程一堆，今天学 Python，明天学 LLM，后天又看到有人说要学 RAG。到底先学什么？学了有没有用？
+
+**计划做了，执行不下去。**
+每次都立 flag，每次都倒。没有人监督，没有反馈，不知道自己是快了还是慢了。慢慢地，连打开计划的勇气都没有了。
+
+**拿到面试了，不知道怎么准备。**
+面经一堆，但不知道哪些是重点。准备了一周，面试官问的问题一个都没押中。挂了，也不知道为什么挂。
+
+**迷茫。**
+不知道自己值多少钱，不知道市场要什么人，不知道现在学的东西有没有用。每天都在焦虑，但不知道该怎么办。
+
+## Career Kit 怎么帮你？
+
+**有真实数据，不瞎分析**
+接入 BOSS 直聘、字节跳动、牛客网的真实数据。AI 分析你的差距时，用的是市场真实要求，不是凭空想象。
+
+**细化到每天，跟着做就行**
+不只是给你一个大方向。AI 把路线图拆成每天的任务，你只需要看今天做什么、打卡完成。不用想"下一步该干嘛"。
+
+**跟着你调整，不是死计划**
+提前完成？加深度任务。超期了？压缩后续时长。拿到面试？自动加面试冲刺阶段。计划跟着你变，不是你跟着计划走。
+
+## 快速开始
+
+```bash
+git clone https://github.com/Wuuuuuuuuuz/career-kit.git
+cd career-kit
+pip install -e .
+```
+
+然后在 Claude Code / Cursor / Windsurf 中配置：
+
+```json
+{
+  "mcpServers": {
+    "career-kit": {
+      "command": "career-kit"
+    }
+  }
+}
+```
+
+和 AI 说"我想转行"，就开始了。
+
+## 它能做什么？
 
 ```
 你：我想转 AI Agent 方向
@@ -32,6 +84,17 @@ graph LR
     F -->|阶段完成| H[阶段审计]
     H --> G
 ```
+
+## 为什么选 Career Kit？
+
+| | ChatGPT | 求职网站 | Career Kit |
+|---|---------|----------|------------|
+| 真实岗位数据 | ❌ | ✅ | ✅ |
+| 个性化路线图 | ❌ | ❌ | ✅ |
+| 每日任务打卡 | ❌ | ❌ | ✅ |
+| 进度追踪调整 | ❌ | ❌ | ✅ |
+| 免费 | ✅ | ✅ | ✅ |
+| 本地运行，数据不上传 | ✅ | ❌ | ✅ |
 
 ## MCP 工具
 
@@ -62,98 +125,6 @@ graph LR
 | `trigger_insight` | 触发洞察检查（阶段完成/事件触发） |
 | `suggest_adjustment` | AI 提出调整建议 |
 | `apply_adjustment` | 应用调整（小幅自动，大幅需确认） |
-
-## 数据模型
-
-骨架固定，内容自由。LLM 根据每个用户的具体情况决定每个 section 里放什么：
-
-```json
-{
-  "who": {},     // 你是谁——LLM 自由填充
-  "have": {},    // 你有什么——技能、经历、资源
-  "want": {},    // 你想要什么——目标岗位、行业、薪资
-  "gap": {},     // 差距是什么——analyze_gaps 自动生成
-  "plan": {},    // 怎么走——generate_roadmap 自动生成
-  "checkins": [],    // 打卡记录
-  "adjustments": []  // 调整历史
-}
-```
-
-只有这 5 个 section 是固定的，内部字段完全由 LLM 根据对话内容灵活组织。`checkins` 和 `adjustments` 用于追踪进度和调整历史。
-
-## 洞察触发机制
-
-AI 在以下情况主动提出调整建议：
-
-| 类型 | 触发时机 | 示例 |
-|------|----------|------|
-| 阶段审计 | 完成阶段后 | 完成实习后，评估含金量决定是否升级目标 |
-| 事件触发 | 用户报告事件 | "拿到大厂面试" → 加上面试冲刺阶段 |
-| 主动检查 | 每次对话 | 超期任务 → 压缩后续任务时长 |
-
-## 调整策略
-
-- **小幅调整（自动）**：超期 1-2 天，压缩后续任务各 0.5 天；提前完成，添加深度任务
-- **大幅调整（询问用户）**：超期 1 周+，重新规划阶段；目标变更（中厂→大厂），重新设计路线
-
-## 前端
-
-提供静态 HTML 仪表盘（`dashboard.html`），读取 `progress.json` 显示进度：
-- 总体进度条
-- 当前阶段详情
-- 今日任务列表（可勾选）
-- 打卡历史
-- 调整历史
-
-用户双击 HTML 即可查看，无需启动 agent。
-
-## 安装
-
-### 从 GitHub 克隆
-
-```bash
-git clone https://github.com/Wuuuuuuuuuz/career-kit.git
-cd career-kit
-pip install -e .
-```
-
-### 从 PyPI 安装（待发布）
-
-```bash
-pip install career-kit
-```
-
-## 在 Claude Code 中使用
-
-添加到 MCP 配置：
-
-```json
-{
-  "mcpServers": {
-    "career-kit": {
-      "command": "career-kit"
-    }
-  }
-}
-```
-
-或者使用本地路径：
-
-```json
-{
-  "mcpServers": {
-    "career-kit": {
-      "command": "python",
-      "args": ["-m", "src.server"],
-      "cwd": "/path/to/career-kit"
-    }
-  }
-}
-```
-
-## 在 Cursor / Windsurf / Continue 中使用
-
-Career Kit 使用标准 MCP 协议，任何 MCP 客户端都能连接。
 
 ## 文档
 
