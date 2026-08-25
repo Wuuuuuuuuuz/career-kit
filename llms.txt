@@ -17,16 +17,15 @@
 1. start_session()
 2. intake(who/have/want)
 3. finalize_profile()
-4. analyze_gaps()
-5. search_market(query="目标岗位 技能要求")
-6. save_gap_analysis()
-7. generate_roadmap()
-8. save_roadmap()
-9. generate_tasks()
+4. list_company_jobs()                        # 查看可用企业数据源
+5. fetch_company_jobs(company=..., params=...)  # 抓取真实岗位（含薪资）
+6. analyze_gaps() → save_gap_analysis()       # 基于真实数据分析
+7. generate_roadmap() → save_roadmap()
+8. generate_tasks()
 ```
 
 ## 核心原则
 
-1. **必须使用真实数据**：分析前必须调用 `search_market` 搜索真实市场数据
+1. **必须使用真实数据**：分析前必须用 `fetch_company_jobs` / `search_knowledge` 获取真实数据，不要凭 LLM 知识编造
 2. **按工作流执行**：每个阶段有前置条件，不要跳过步骤
 3. **保存中间结果**：使用 `save_*` 工具保存 LLM 生成的内容

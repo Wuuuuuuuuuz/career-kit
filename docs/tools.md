@@ -13,13 +13,16 @@
 | `finalize_profile` | 确认档案 | 档案完整后 |
 | `import_jd` | 导入 JD | 有目标岗位时 |
 
-### 分析工具
+### 数据获取工具
 
 | 工具 | 作用 | 调用时机 |
 |------|------|----------|
-| `analyze_gaps` | 差距分析 | 档案确认后 |
+| `list_company_jobs` | 列出可用企业数据源 | 需要真实数据时先调用 |
+| `fetch_company_jobs` | 抓取企业岗位（含薪资） | 分析和规划前必须调用 |
+| `fetch_jd_detail` | 获取 JD 全文 | 深入分析某岗位时 |
+| `search_knowledge` | 检索本地知识库 | 查找已积累的资料 |
+| `analyze_gaps` | 差距分析 | 真实数据就绪后 |
 | `save_gap_analysis` | 保存分析结果 | LLM 分析完成后 |
-| `search_market` | 搜索市场信息 | 需要补充数据时 |
 
 ### 规划工具
 

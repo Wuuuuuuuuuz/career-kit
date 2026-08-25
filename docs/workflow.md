@@ -54,17 +54,22 @@
 
 | 工具 | 作用 |
 |------|------|
+| `list_company_jobs` | 查看可用企业数据源 |
+| `fetch_company_jobs` | 抓取真实岗位（含薪资范围） |
+| `fetch_jd_detail` | 获取 JD 全文 |
+| `search_knowledge` | 检索本地知识库 |
 | `analyze_gaps` | 获取分析方法论 |
-| `search_market` | 搜索真实市场数据 |
 | `save_gap_analysis` | 保存分析结果 |
 
 ### 流程
 
 ```
-1. analyze_gaps()
-2. search_market(query="AI Agent 工程师 技能要求")  // 必须调用
-3. search_market(query="AI Agent 工程师 面试题")    // 补充面试信息
-4. save_gap_analysis(gap_json='{"match_score":65, "skill_gaps":[...]}')
+1. list_company_jobs()                              // 查看可用企业
+2. fetch_company_jobs(company="bytedance", params='{"keyword":"AI Agent"}')  // 必须调用
+3. fetch_jd_detail(url="...")                       // 获取 JD 全文
+4. search_knowledge(query="AI Agent 面经")          // 补充本地资料
+5. analyze_gaps()
+6. save_gap_analysis(gap_json='{"match_score":65, "skill_gaps":[...]}')
 ```
 
 ### 前置条件
@@ -80,9 +85,9 @@
 
 ### 关键规则
 
-1. **必须先搜索真实数据**：在调用 `save_gap_analysis` 之前，必须调用 `search_market`
+1. **必须先抓取真实数据**：在调用 `save_gap_analysis` 之前，必须用 `fetch_company_jobs` / `fetch_jd_detail` / `search_knowledge` 获取真实数据
 2. **标注数据来源**：gap_json 中的每个差距应标注数据来源（如 `"source": "BOSS直聘 JD"`）
-3. **不要凭空分析**：差距必须基于真实市场数据，不能凭 LLM 自身知识
+3. **不要凭空分析**：差距必须基于真实市场数据，不能凭 LLM 自身知识；薪资行情从岗位搜索结果的 salary 字段汇总
 
 ---
 

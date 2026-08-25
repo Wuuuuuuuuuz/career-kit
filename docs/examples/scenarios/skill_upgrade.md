@@ -23,8 +23,8 @@ finalize_profile()
 
 ```
 analyze_gaps()
-search_market(query="高级 AI Agent 工程师 技能要求")
-search_market(query="AI Agent 技术趋势 2025")
+fetch_company_jobs(company="bytedance", params='{"keyword":"高级 AI Agent"}')
+fetch_jd_detail(url="...")
 save_gap_analysis(gap_json='{
   "match_score": 70,
   "skill_gaps": [

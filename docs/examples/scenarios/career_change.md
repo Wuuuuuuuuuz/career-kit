@@ -25,8 +25,9 @@ finalize_profile()
 
 ```
 analyze_gaps()
-search_market(query="AI Agent 工程师 技能要求")
-search_market(query="AI Agent 工程师 面试题")
+list_company_jobs()
+fetch_company_jobs(company="boss", params='{"keyword":"AI Agent", "city":"上海"}')
+fetch_jd_detail(url="...")
 save_gap_analysis(gap_json='{
   "match_score": 45,
   "skill_gaps": [

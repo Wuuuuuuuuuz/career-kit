@@ -16,11 +16,6 @@ from .tools.errors import (
 )
 from .tools.gap_analyzer import format_gap_report, parse_gap_analysis
 from .tools.methodology import build_methodology_context
-from .tools.market import (
-    build_market_search_prompt,
-    format_market_results,
-    search_market_data,
-)
 from .tools.plan_importer import compare_plans, format_diff_report, parse_plan_file
 from .tools.roadmap import format_roadmap, parse_roadmap
 from .tools.schedule import format_schedule, generate_ics, parse_schedule
@@ -277,7 +272,7 @@ def import_jd_file(file_path: str) -> str:
 def analyze_gaps() -> str:
     """对比现状（have）与目标（want/target_jd），输出差距分析。
 
-    返回方法论上下文。LLM 按照方法论指引，使用 search_market 搜索补充数据，
+    返回方法论上下文。LLM 按照方法论指引，基于已抓取的真实数据
     分析差距，然后调用 save_gap_analysis(gap_json) 保存结果。
 
     前置条件：档案已通过 finalize_profile 确认。
@@ -613,46 +608,49 @@ def export_ics(start_date: str = "") -> str:
 
 
 @mcp.tool()
-def search_market(query: str) -> str:
-    """搜索就业市场信息。
+def search_knowledge(query: str) -> str:
+    """检索本地知识库（用户积累的求职资料）。
 
-    何时调用：用户询问市场相关信息时调用。例如：
-    - "字节跳动前端薪资多少？"
-    - "AI Agent 工程师面试问什么？"
-    - "React 和 Vue 哪个更好找工作？"
+    只搜索本地 data/knowledge/ 目录：scraper 抓取自动存入的 JD/面经，
+    以及用户手动放入的简历、市场资料。不联网，不调用 LLM。
 
-    搜索类型自动推断：
-    - 面试相关 → 搜索面经
-    - 薪资相关 → 搜索薪资数据
-    - JD 相关 → 搜索岗位要求
-    - 其他 → 市场趋势
+    何时调用：
+    - 分析前查找已积累的同背景案例、目标公司 JD
+    - 查询之前抓取过的面经内容
 
-    数据来源（按优先级）：
-    1. 本地知识库（dev/knowledge/market/）
-    2. LLM 知识（兜底）
+    无结果时的正确做法：
+    - 调用 fetch_company_jobs 抓取实时数据（抓取结果会自动存入知识库）
+    - 不要基于自身知识编造市场数据
 
     Args:
-        query: 搜索内容——岗位名称、公司、薪资、面试经验等
-            示例："字节跳动前端开发 面经"
+        query: 搜索关键词
+            示例："AI Agent 面经"、"字节跳动 JD"、"双非 转 AI"
     """
-    # 搜索数据
-    search_results = search_market_data(query)
+    from .tools.knowledge_search import search_knowledge as do_search
 
-    # 构建 LLM prompt
-    prompt = build_market_search_prompt(query, search_results)
+    result = do_search(query)
+    results = result["results"]
 
-    # 数据来源提示
-    source_info = ""
-    if search_results["has_local_data"]:
-        source_info = "（已找到本地参考数据）"
-    else:
-        source_info = "（基于 LLM 知识回答）"
+    if not results:
+        return (
+            f"【知识库检索】{query}\n\n"
+            "知识库中暂无相关资料。\n\n"
+            "下一步建议：\n"
+            "1. 调用 fetch_company_jobs 抓取实时岗位数据（自动存入知识库）\n"
+            "2. 用 fetch_jd_detail 获取 JD 全文\n"
+            "3. 不要基于 LLM 自身知识编造市场数据——分析必须基于真实数据"
+        )
 
-    return (
-        f"【市场搜索】{query} {source_info}\n\n"
-        f"{prompt}\n\n"
-        "请基于以上信息回答用户的问题。"
-    )
+    lines = [f"【知识库检索】{query} — 找到 {result['count']} 条：\n"]
+    for i, r in enumerate(results, 1):
+        lines.append(f"{i}. **来源**: {r['source']}（相关度 {r['relevance']}）")
+        preview = r["content"][:300].replace("\n", " ")
+        lines.append(f"   {preview}")
+        lines.append("")
+
+    lines.append("需要完整内容时，直接读取对应文件路径。")
+    lines.append("如需更多实时数据，调用 fetch_company_jobs。")
+    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -893,11 +891,13 @@ def fetch_company_jobs(company: str, params: str = "{}") -> str:
     for i, job in enumerate(result["results"], 1):
         title = job.get("title", "未知岗位")
         location = job.get("location", "")
+        salary = job.get("salary", "")
         url = job.get("url", "")
         summary = job.get("summary", "")
 
         loc_str = f" | {location}" if location else ""
-        lines.append(f"{i}. **{title}**{loc_str}")
+        sal_str = f" | {salary}" if salary else ""
+        lines.append(f"{i}. **{title}**{loc_str}{sal_str}")
         if url:
             lines.append(f"   链接：{url}")
         if summary:
@@ -905,6 +905,7 @@ def fetch_company_jobs(company: str, params: str = "{}") -> str:
         lines.append("")
 
     lines.append("获取岗位详情：fetch_jd_detail(url=\"具体岗位URL\")")
+    lines.append("薪资行情可直接汇总以上各岗位的薪资范围，这是最真实的市场数据。")
     return "\n".join(lines)
 
 

@@ -145,13 +145,10 @@
 
 | 模式 | 来源 | 用在 career-kit |
 |------|------|----------------|
-| Pipeline 引擎（确定性 + LLM） | ResumeIQ | SOP 驱动的差距分析 |
-| 混合检索（关键词 + 语义） | ResumeIQ | DataRouter 数据源路由 |
+| 方法论驱动（YAML 指引 + LLM 自主执行） | ResumeIQ Pipeline 思想 | methodology.py 差距分析 |
 | 状态机引导 | Non-Tech Job Navigator | intake 阶段 |
 | 本地优先 + JSON | Career Compass | 数据存储 |
-| Token 优化 | Career Agents | 对话成本控制 |
-| 确定性降级 | Agentic Career Search | LLM 不可用时兜底 |
-| 里程碑 + 每日签到 | Plan Tracker MCP | track_progress |
+| 任务级打卡 + 洞察调整 | Plan Tracker MCP | checkin_task / trigger_insight |
 | ICS 日历导出 | Syllabus-to-Study-Plan MCP | generate_schedule |
 
 ### 10.3 四阶段路线图模型
@@ -252,17 +249,17 @@
 
 ### 12.5 设计决策
 
-**采用方案：httpx 直调 gw-c.nowcoder.com API（Crawl4NK 模式）**
+**最终方案：Playwright DOM 抓取搜索结果 + 详情页（已实现）**
+
+> 修正：早期调研结论为"httpx 直调 gw-c.nowcoder.com API"，
+> 实现时发现牛客网 gw-c 网关有阿里云 WAF，纯 httpx 指纹无法通过，
+> 故改为 Playwright 打开搜索页提取 DOM（subType=818 面经筛选参数）。
+> 详情页 `.nc-slate-editor-content` 为 SSR 渲染，无需登录即可提取。
 
 理由：
-1. API 返回结构化 JSON，比 HTML 解析稳定
-2. 无需 Playwright/Selenium，轻量快速
-3. career-kit 框架已有 httpx 依赖
-4. Cookie 作为可选配置，无 Cookie 时降级为公开 API
-
-**数据类型：面经（interviews），非 JD**
-
-牛客网主要是面经分享平台，数据写入 `dev/knowledge/interviews/nowcoder/`
+1. WAF 要求真实浏览器指纹，Playwright 可直接通过
+2. 详情页 SSR 渲染，DOM 提取稳定
+3. 数据类型：面经（interviews），写入 `data/knowledge/interviews/nowcoder/`
 
 ---
 

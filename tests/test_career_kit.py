@@ -154,7 +154,7 @@ def test_session():
     msg = get_welcome_message()
     assert "Career Kit" in msg
     assert "简历" in msg
-    assert "口述" in msg
+    assert "fetch_company_jobs" in msg
     print("[PASS] 欢迎信息包含关键内容")
     print(f"\n欢迎信息预览:\n{msg[:200]}...")
     print()

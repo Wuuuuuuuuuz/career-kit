@@ -49,37 +49,40 @@
 
 ### 子阶段
 
-#### Phase 2.1: 数据模型扩展
+#### Phase 2.1: 数据模型扩展 ✅
 
-- [ ] 新增 `Task` 模型（id, name, deadline, status, priority）
-- [ ] 新增 `CheckIn` 模型（task_id, timestamp, status, notes）
-- [ ] 新增 `Adjustment` 模型（trigger, trigger_type, changes）
-- [ ] 更新 `CareerProfile`，添加 checkins 和 adjustments 字段
+- [x] 新增 `Task` 模型（id, name, deadline, status, priority）
+- [x] 新增 `CheckIn` 模型（task_id, timestamp, status, notes）
+- [x] 新增 `Adjustment` 模型（trigger, trigger_type, changes）
+- [x] 更新 `CareerProfile`，添加 tasks/checkins/adjustments 字段
 
-#### Phase 2.2: 任务管理 + 洞察引擎
+#### Phase 2.2: 任务管理 + 洞察引擎 ✅
 
-- [ ] `task_manager.py`：任务创建、打卡、调整
-- [ ] `insight.py`：洞察检查、调整建议
-- [ ] 实现三种触发方式（阶段审计、事件触发、主动检查）
+- [x] `task_manager.py`：任务创建、打卡、调整
+- [x] `insight.py`：洞察检查、调整建议
+- [x] 实现三种触发方式（阶段审计、事件触发、主动检查）
 
-#### Phase 2.3: 静态前端
+#### Phase 2.3: 静态前端 ✅（数据源为 profile.json）
 
-- [ ] `dashboard.html`：进度仪表盘
-- [ ] 读取 `progress.json` 显示进度
-- [ ] 支持任务勾选打卡
+- [x] `dashboard.html`：进度仪表盘
+- [ ] 接通 profile.json 真实数据（当前内置 mock 数据）
 
-#### Phase 2.4: MCP Tools 集成
+#### Phase 2.4: MCP Tools 集成 ✅
 
-- [ ] `get_today_tasks`：获取今日任务
-- [ ] `checkin_task`：打卡任务
-- [ ] `get_progress`：获取进度
-- [ ] `trigger_insight`：触发洞察
-- [ ] `suggest_adjustment`：提出调整建议
-- [ ] `apply_adjustment`：应用调整
+- [x] `generate_tasks` / `get_today_tasks` / `checkin_task`
+- [x] `get_progress` / `trigger_insight` / `apply_insight`
+- [x] `suggest_adjustment` / `get_workflow_status`
 
-#### Phase 2.5: 测试 & 打磨
+#### Phase 2.5: 架构清理 ✅
 
-- [ ] 端到端测试
+- [x] 下线旧签到系统（track_progress/save_checkin/view_progress）
+- [x] 删除 search_market 空转工具，新增 search_knowledge
+- [x] 清理死代码（DataRouter/sop_executor 遗留/engine/planner）
+- [x] 统一工具返回类型为 str，AST 测试锁死契约
+
+#### Phase 2.6: 测试 & 打磨
+
+- [ ] 端到端测试（按 session.py 欢迎语全流程走查）
 - [ ] Prompt 优化
 - [ ] 用户体验优化
 
@@ -159,7 +162,7 @@
 - [ ] 集成 `sentence-transformers`（`BAAI/bge-base-zh-v1.5`）
 - [ ] 实现 `SemanticRetriever` 类
 - [ ] 实现文档索引和增量更新
-- [ ] 替换 `DataRouter` 的检索逻辑
+- [ ] 升级 `search_knowledge` 的检索逻辑（关键词 → 语义）
 
 ### 验收标准
 
@@ -243,12 +246,10 @@ def build_analysis_prompt(profile, search_results):
 | 配置格式 | YAML | 已有，人类可读 |
 | 数据存储 | JSON + Markdown | 结构化 + 可读性，隐私友好 |
 | 知识写入 | knowledge_writer.py | 框架自动调用，贡献者无感 |
-| 反馈持久化 | feedback_writer.py | 半自动，用户可控 |
 
 **关键设计决策**：
 - JD 用 JSON 格式（结构化，便于检索）
 - 面经用 Markdown 格式（可读性好，便于 LLM 理解）
-- 反馈用 Markdown + frontmatter（可读 + 结构化元数据）
 - 缓存用文件系统（简单，无外部依赖）
 
 ---

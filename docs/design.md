@@ -124,46 +124,64 @@ finalize_profile → 生成摘要，进入分析
 
 ## 6. MCP Tools 设计
 
-共 8 个 tool，分三个阶段：
+按工作流阶段分组（当前 31 个）：
 
 ### 建档阶段（状态机）
 
 | Tool | 输入 | 输出 | 说明 |
 |------|------|------|------|
 | `start_session` | 无 | 欢迎信息 | 初始化新档案 |
+| `parse_resume` / `import_jd(_file)` | 文件/文本 | 解析结果 | 简历与 JD 导入 |
 | `intake` | section + data | 确认信息 | 逐步填充某个 section |
 | `finalize_profile` | 无 | 摘要 | 确认档案完整，解锁分析工具 |
+
+### 数据获取阶段
+
+| Tool | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `list_company_jobs` | 无 | 企业源清单 | 查看可用 scraper 和参数 |
+| `fetch_company_jobs` | company + params | 岗位列表（含薪资） | 实时抓取 |
+| `fetch_jd_detail` | url | JD 全文 | 获取岗位详情 |
+| `search_knowledge` | query | 本地资料 | 只查知识库，不联网 |
 
 ### 分析规划阶段
 
 | Tool | 输入 | 输出 | 说明 |
 |------|------|------|------|
-| `analyze_gaps` | 无（读档案） | 差距分析 | 对比 have/want，检索市场数据 |
-| `generate_roadmap` | 无（读差距） | 路线图 | 基于差距分析 + deadline + 可用时间生成分阶段计划 |
-| `generate_schedule` | scope | 日程表 | 路线图拆成每日任务，支持 ICS 导出 |
+| `analyze_gaps` / `save_gap_analysis` | gap_json | 差距分析 | 对比 have/want 与真实 JD |
+| `generate_roadmap` / `save_roadmap` | roadmap_json | 路线图 | 分阶段计划 |
+| `generate_schedule` / `save_schedule` | schedule_json | 日程表 | 每日时间块，支持 ICS 导出 |
 
-### 持续运行阶段
+### 任务执行与洞察阶段
 
 | Tool | 输入 | 输出 | 说明 |
 |------|------|------|------|
-| `track_progress` | report | 更新结果 | 记录进度，自动调整后续计划 |
-| `search_market` | query | 搜索结果 | 搜岗位/薪资/面试信息，不写入档案 |
+| `generate_tasks` | 无 | 任务列表 | 从路线图生成任务 |
+| `get_today_tasks` / `checkin_task` | task_id | 打卡结果 | 任务级追踪 |
+| `trigger_insight` / `apply_insight` | trigger_type | 调整记录 | 三种触发方式 |
+| `get_progress` / `suggest_adjustment` | 无 | 进度/建议 | 状态查询 |
+| `get_workflow_status` | 无 | 当前阶段 | LLM 不确定下一步时调用 |
 
 ### 核心循环
 
 ```
-用户汇报进度 → track_progress
-    ↓
-analyze_gaps（重新对比现状和目标）
-    ↓
-generate_roadmap（调整路线）
-    ↓
-generate_schedule（输出新日程）
-    ↓
-用户执行 → 回到 track_progress
+用户目标 → fetch_company_jobs（真实数据）
+    → analyze_gaps → save_gap_analysis
+    → generate_roadmap → generate_schedule
+    → generate_tasks → get_today_tasks
+    → 用户打卡 checkin_task
+    → trigger_insight → apply_insight（调整）
+    → 回到任务执行
 ```
 
 每一轮循环都让规划更精确。
+
+### 工具面设计四原则
+
+1. **一个用户意图 ↔ 唯一工具入口**——双入口会让 LLM 混乱
+2. **返回值即指引**——下一步做什么写进返回值
+3. **诚实的能力边界**——无数据就明说并给替代路径，绝不引导编造
+4. **单一指导源**——工作流知识只在 session.py 维护
 
 ---
 
@@ -171,14 +189,14 @@ generate_schedule（输出新日程）
 
 | 数据类型 | 来源 | 可信度 |
 |----------|------|--------|
-| 岗位要求（JD） | 企业官网抓取 | ⭐⭐⭐⭐⭐ 真实 |
-| 面试经验 | 牛客/小红书抓取 | ⭐⭐⭐⭐ 真实但主观 |
-| 薪资数据 | 聚合多源 | ⭐⭐⭐ 参考价值 |
-| 成功案例 | 简历/面经积累 | ⭐⭐⭐⭐ 可对标 |
-| LLM 知识 | 模型训练数据 | ⭐⭐ 兜底用 |
+| 岗位要求（JD） | 企业 scraper 实时抓取 | ⭐⭐⭐⭐⭐ 真实 |
+| 薪资数据 | JD 中的薪资范围（fetch_company_jobs 汇总） | ⭐⭐⭐⭐⭐ 真实 |
+| 面试经验 | 牛客 scraper 抓取 | ⭐⭐⭐⭐ 真实但主观 |
+| 成功案例 | 知识库积累（简历/面经） | ⭐⭐⭐⭐ 可对标 |
 
 **核心判断**：
-- 数据源必须靠真实抓取，LLM 知识只作兜底
+- 分析必须基于真实抓取的数据，LLM 知识不作为分析依据
+- 无数据时诚实告知并引导用户走抓取链路，绝不静默降级到 LLM 编造
 - 不预置知识库内容，只提供填充途径
 - 数据获取通过企业爬虫，不依赖外部搜索 API
 

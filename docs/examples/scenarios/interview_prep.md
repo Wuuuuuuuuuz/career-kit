@@ -45,8 +45,8 @@ apply_insight(insight_json='{
 ### 3. 搜索面试信息
 
 ```
-search_market(query="字节跳动 AI Agent 工程师 面经")
-search_market(query="字节跳动 面试流程")
+fetch_company_jobs(company="nowcoder", params='{"keyword":"Agent 开发", "filter_company":"字节跳动"}')
+search_knowledge(query="字节跳动 AI Agent 面经")
 ```
 
 ### 4. 生成面试任务

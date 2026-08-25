@@ -13,13 +13,16 @@ Career Kit 提供的 MCP 工具，用于职业规划全流程。
 | `finalize_profile` | profile.py | 确认档案 |
 | `import_jd` | profile.py | 导入 JD |
 
-### 分析工具
+### 数据获取与分析工具
 
 | 工具 | 文件 | 作用 |
 |------|------|------|
+| `list_company_jobs` | scrapers/loader.py | 列出可用企业数据源 |
+| `fetch_company_jobs` | scrapers/loader.py | 抓取企业岗位（含薪资） |
+| `fetch_jd_detail` | scrapers/loader.py | 获取 JD 全文 |
+| `search_knowledge` | knowledge_search.py | 检索本地知识库 |
 | `analyze_gaps` | gap_analyzer.py | 差距分析 |
 | `save_gap_analysis` | gap_analyzer.py | 保存分析结果 |
-| `search_market` | market.py | 搜索市场信息 |
 
 ### 规划工具
 

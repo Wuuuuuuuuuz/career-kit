@@ -662,7 +662,7 @@ def test_step8_mcp_tools_registered():
         "import_jd", "import_jd_file", "analyze_gaps", "save_gap_analysis",
         "generate_roadmap", "save_roadmap",
         "generate_schedule", "save_schedule", "export_ics",
-        "search_market",
+        "search_knowledge",
     ]
 
     # 任务与洞察工具

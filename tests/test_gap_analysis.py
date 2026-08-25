@@ -16,8 +16,8 @@ from src.tools.gap_analyzer import (
     parse_gap_analysis,
 )
 from src.tools.methodology import build_methodology_context, load_methodology
+from src.tools.knowledge_search import search_knowledge
 from src.tools.profile import load_profile, merge_section, save_profile
-from src.tools.data_source import DataRouter, LocalKnowledgeSource, LLMKnowledgeSource
 
 
 def test_sop_config_loading():
@@ -79,31 +79,21 @@ def test_sop_execution():
     print()
 
 
-def test_data_source():
-    """测试数据源接口。"""
+def test_knowledge_search():
+    """测试知识库检索。"""
     print("=" * 60)
-    print("测试 3: 数据源接口")
+    print("测试 3: 知识库检索")
     print("=" * 60)
 
-    # 测试本地知识源
-    local = LocalKnowledgeSource()
-    results = local.search("AI Agent 面试", "interview_experiences")
-    print(f"[OK] 本地知识源搜索完成，结果数：{len(results)}")
-
-    # 测试 LLM 兜底源
-    llm = LLMKnowledgeSource()
-    results = llm.search("test", "similar_profiles")
-    assert len(results) == 1
-    assert results[0]["fallback"] is True
-    print("[OK] LLM 兜底源返回正确")
-
-    # 测试路由器
-    router = DataRouter()
-    result = router.search("AI Agent", "interview_experiences")
+    result = search_knowledge("AI Agent 面试")
     assert "results" in result
-    assert "has_local" in result
-    assert "fallback_to_llm" in result
-    print(f"[OK] 路由器工作正常，has_local={result['has_local']}, fallback={result['fallback_to_llm']}")
+    assert "count" in result
+    print(f"[OK] 知识库检索完成，结果数：{result['count']}")
+
+    # 空查询不崩溃
+    result2 = search_knowledge("")
+    assert "results" in result2
+    print("[OK] 空查询安全处理")
 
     print()
 
