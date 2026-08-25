@@ -6,9 +6,16 @@
 
 ## 1. 项目定位
 
-一个 MCP 服务器，把 AI 变成职业规划伙伴。用户告诉 AI 自己的现状和目标，AI 帮忙分析差距、规划路线、拆成日程，执行后持续追踪和调整。
+一个 MCP 服务器，把 AI 变成职业规划伙伴。用户告诉 AI 自己的现状和目标，AI 帮忙分析差距、规划路线、拆成阶段任务，执行后持续追踪和调整。
 
-核心链路：**建档 → 差距分析 → 路线图 → 日程 → 追踪 → 调整 → 循环**
+核心链路：**建档 → 差距分析 → 路线图 → 任务 → 打卡 → 调整 → 循环**
+
+核心理念：**顺序归产品，时间归用户。**
+- 产品只回答「达成目标需要什么、按什么顺序」，不为任务设定时限
+- 每个人的自由时间、学习能力、投入意愿不同，LLM 替用户规划时间是不恰当的
+- 用户可能提前完成（有了精力做新规划），也可能滞后——节奏完全由用户自己掌握
+- 进度以**阶段**为刻度：每阶段的完成数/总数就是进度条
+- 用户想要日程时，LLM 在对话中直接写 markdown/HTML 文档交付，系统不存储日程
 
 ---
 
@@ -38,8 +45,8 @@
 
 三个要素缺一不可：
 1. **真实数据** — 市场要什么、别人怎么拿到 offer、面试问什么
-2. **个人现状** — 你会什么、缺什么、有多少时间
-3. **可执行性** — 每天做什么、怎么验证进度、何时调整
+2. **个人现状** — 你会什么、缺什么（摸排真实水平，简历有美化成分）
+3. **可执行性** — 下一步做什么、怎么验证进度、何时调整
 
 ---
 
@@ -73,7 +80,7 @@ MCP 是当前 AI 工具开源的通用协议，写一次所有客户端都能调
 ```json
 {
   "who": {},   // 你是谁
-  "have": {},  // 你有什么
+  "have": {},  // 你有什么（技能条目建议带 evidence 证据与 confidence 置信度）
   "want": {},  // 你想要什么
   "gap": {},   // 差距是什么
   "plan": {}   // 怎么走
@@ -92,6 +99,13 @@ MCP 是当前 AI 工具开源的通用协议，写一次所有客户端都能调
 
 靠 `summary` 字段而不是 schema 约束。每次更新后 LLM 生成一段摘要，下次对话先读摘要理解上下文。摘要是 LLM 之间的"交接文档"。
 
+### 能力证据沉淀
+
+简历有美化成分，简单简历不能反映用户真实水平：
+- **建档时**：对关键技能追问证据（做过什么项目、讲一个难点），have 条目带 evidence/confidence
+- **执行中**：任务完成打卡时自动把「任务名+备注+时间」沉淀进 have.capability_evidence
+- **目标变更时**：已完成进度直接作为能力补充参与重新分析——努力不白费
+
 ---
 
 ## 5. 建档流程设计
@@ -105,9 +119,7 @@ start_session → "你现在是什么状态？"
     ↓
 intake(who) → "你目标是什么方向？"
     ↓
-intake(want) → "你现在会什么？"
-    ↓
-intake(have) → "你有多少时间？"
+intake(want) → "你现在会什么？（关键技能追问证据）"
     ↓
 finalize_profile → 生成摘要，进入分析
 ```
@@ -124,7 +136,7 @@ finalize_profile → 生成摘要，进入分析
 
 ## 6. MCP Tools 设计
 
-按工作流阶段分组（当前 31 个）：
+按工作流阶段分组（当前 24 个）：
 
 ### 建档阶段（状态机）
 
@@ -132,7 +144,7 @@ finalize_profile → 生成摘要，进入分析
 |------|------|------|------|
 | `start_session` | 无 | 欢迎信息 | 初始化新档案 |
 | `parse_resume` / `import_jd(_file)` | 文件/文本 | 解析结果 | 简历与 JD 导入 |
-| `intake` | section + data | 确认信息 | 逐步填充某个 section |
+| `intake` | section + data | 确认信息 | 逐步填充 who/have/want（技能带证据） |
 | `finalize_profile` | 无 | 摘要 | 确认档案完整，解锁分析工具 |
 
 ### 数据获取阶段
@@ -140,7 +152,8 @@ finalize_profile → 生成摘要，进入分析
 | Tool | 输入 | 输出 | 说明 |
 |------|------|------|------|
 | `list_data_sources` | 无 | 企业源清单 | 查看可用 scraper 和参数 |
-| `fetch_company_jobs` | company + params | 岗位列表（含薪资） | 实时抓取 |
+| `get_scraper_guide` | company | 使用教程 | 首次使用某数据源前读取 |
+| `fetch_company_jobs` | company + params | 岗位列表（含薪资） | 实时抓取，自动写入知识库 |
 | `fetch_jd_detail` | url | JD 全文 | 获取岗位详情 |
 | `search_knowledge` | query | 本地资料 | 只查知识库，不联网 |
 
@@ -149,28 +162,29 @@ finalize_profile → 生成摘要，进入分析
 | Tool | 输入 | 输出 | 说明 |
 |------|------|------|------|
 | `analyze_gaps` / `save_gap_analysis` | gap_json | 差距分析 | 对比 have/want 与真实 JD |
-| `generate_roadmap` / `save_roadmap` | roadmap_json | 路线图 | 分阶段计划 |
-| `generate_schedule` / `save_schedule` | schedule_json | 日程表 | 每日时间块，支持 ICS 导出 |
+| `generate_roadmap` / `save_roadmap` | roadmap_json | 路线图 | 分阶段计划，无时长字段 |
 
 ### 任务执行与洞察阶段
 
 | Tool | 输入 | 输出 | 说明 |
 |------|------|------|------|
-| `generate_tasks` | 无 | 任务列表 | 从路线图生成任务 |
-| `get_today_tasks` / `checkin_task` | task_id | 打卡结果 | 任务级追踪 |
-| `trigger_insight` / `apply_insight` | trigger_type | 调整记录 | 三种触发方式 |
-| `get_progress` / `suggest_adjustment` | 无 | 进度/建议 | 状态查询 |
-| `get_workflow_status` | 无 | 当前阶段 | LLM 不确定下一步时调用 |
+| `generate_tasks` | 无 | 任务列表 | 从路线图生成任务；重建时历史进度沉淀为能力证据 |
+| `get_next_tasks` | 无 | 当前阶段下一步 | 关卡式：顺序即答案 |
+| `checkin_task` | task_id | 打卡结果 | 完成自动沉淀能力证据 |
+| `trigger_insight` / `apply_insight` | trigger_type | 调整记录 | 仅 stage_audit / event 两种触发 |
+| `get_progress` / `get_workflow_status` | 无 | 进度/状态 | 含目标变更检测 |
+| `export_dashboard` | 无 | 自包含 HTML | 阶段驱动仪表盘快照 |
+| `import_plan` | file_path | 解析结果 | 导入既有规划文档，对比取舍在对话中完成 |
 
 ### 核心循环
 
 ```
 用户目标 → fetch_company_jobs（真实数据）
     → analyze_gaps → save_gap_analysis
-    → generate_roadmap → generate_schedule
-    → generate_tasks → get_today_tasks
-    → 用户打卡 checkin_task
-    → trigger_insight → apply_insight（调整）
+    → generate_roadmap → save_roadmap
+    → generate_tasks → get_next_tasks
+    → 用户打卡 checkin_task（能力证据自动沉淀）
+    → trigger_insight(stage_audit/event) → apply_insight（调整）
     → 回到任务执行
 ```
 
@@ -224,4 +238,4 @@ finalize_profile → 生成摘要，进入分析
 
 ---
 
-*最后更新：2026-08-21*
+*最后更新：2026-08-26*

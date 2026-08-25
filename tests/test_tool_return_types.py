@@ -65,7 +65,7 @@ def test_no_bare_dict_returns_in_tools():
 
 def test_error_response_returns_str():
     """error_response 必须返回字符串。"""
-    from src.tools.errors import error_response, exception_to_response, MissingDataError
+    from src.tools.errors import error_response
 
     result = error_response("TEST_CODE", "测试消息", {"key": "value"})
     assert isinstance(result, str), f"error_response 返回了 {type(result).__name__}"
@@ -75,8 +75,3 @@ def test_error_response_returns_str():
     assert parsed["isError"] is True
     assert parsed["code"] == "TEST_CODE"
     assert parsed["message"] == "测试消息"
-
-    result2 = exception_to_response(MissingDataError("缺少数据", {"missing": "gap"}))
-    assert isinstance(result2, str)
-    parsed2 = json.loads(result2)
-    assert parsed2["code"] == "MISSING_DATA"

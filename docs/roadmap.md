@@ -62,16 +62,17 @@
 - [x] `insight.py`：洞察检查、调整建议
 - [x] 实现三种触发方式（阶段审计、事件触发、主动检查）
 
-#### Phase 2.3: 静态前端 ✅（数据源为 profile.json）
+#### Phase 2.3: 产出物 ✅
 
-- [x] `dashboard.html`：进度仪表盘
-- [ ] 接通 profile.json 真实数据（当前内置 mock 数据）
+- [x] `export_dashboard`：生成内嵌数据快照的自包含 HTML 仪表盘（阶段驱动：总进度+各阶段进度条+下一步任务+能力证据）
+- [x] 移除旧 mock 静态页 src/dashboard.html
+- [x] 日程表改为 LLM 对话中一次性产出 markdown/HTML，系统不存储日程
 
 #### Phase 2.4: MCP Tools 集成 ✅
 
-- [x] `generate_tasks` / `get_today_tasks` / `checkin_task`
+- [x] `generate_tasks` / `get_next_tasks` / `checkin_task`
 - [x] `get_progress` / `trigger_insight` / `apply_insight`
-- [x] `suggest_adjustment` / `get_workflow_status`
+- [x] `get_workflow_status`（含目标变更检测）/ `export_dashboard`
 
 #### Phase 2.5: 架构清理 ✅
 
@@ -79,6 +80,12 @@
 - [x] 删除 search_market 空转工具，新增 search_knowledge
 - [x] 清理死代码（DataRouter/sop_executor 遗留/engine/planner）
 - [x] 统一工具返回类型为 str，AST 测试锁死契约
+- [x] 时间概念退场（2026-08-26）：删除 deadline/estimated_days/超期压缩全套；
+      下线 suggest_adjustment、generate_schedule/save_schedule/export_ics、计划管理 6 件套收缩为 import_plan
+- [x] 任务 schema 三处统一为 {name, description, priority}，阶段 id 由 parse_roadmap 规范化，
+      audited_phases 保证阶段审计每阶段只触发一次
+- [x] 能力证据机制：建档摸排证据 + 打卡沉淀 have.capability_evidence + 重建任务时进度不丢失
+- [x] 用户数据统一落位 ~/.career-kit/（src/paths.py 单一来源）
 
 #### Phase 2.6: 测试 & 打磨
 
@@ -88,10 +95,10 @@
 
 ### 验收标准
 
-1. 用户可以查看今日任务并打卡
-2. AI 在阶段完成后自动触发审计
+1. 用户可以查看当前阶段的下一步任务并打卡（关卡式推进，无时限压力）
+2. AI 在阶段完成后自动触发审计（每阶段仅一次）
 3. AI 在用户报告事件时主动提出调整
-4. 超期任务自动压缩后续时长
+4. 目标变更后系统能检测并引导重新分析，历史进度自动沉淀为能力证据
 
 ---
 
@@ -267,4 +274,4 @@ def build_analysis_prompt(profile, search_results):
 
 ---
 
-*最后更新：2026-08-21*
+*最后更新：2026-08-26*

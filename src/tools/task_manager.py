@@ -1,13 +1,13 @@
-"""任务管理——任务创建、打卡、调整。"""
+"""任务管理——任务创建、打卡辅助、阶段视图。
+
+产品不规划时间：任务只有顺序和状态，进度以阶段为刻度。
+"""
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta
 from typing import Any
 
 from ..models import (
-    Adjustment,
     CareerProfile,
     CheckIn,
     Task,
@@ -15,8 +15,23 @@ from ..models import (
 )
 
 
+def next_task_id(profile: CareerProfile) -> str:
+    """生成不冲突的任务 ID：现有最大编号 + 1。"""
+    max_num = 0
+    for task in profile.tasks:
+        if task.id.startswith("task_"):
+            try:
+                max_num = max(max_num, int(task.id[5:]))
+            except ValueError:
+                continue
+    return f"task_{max_num + 1:03d}"
+
+
 def create_tasks_from_roadmap(profile: CareerProfile) -> list[Task]:
     """从路线图生成任务列表。
+
+    任务 schema 与 sop/roadmap.yaml 的 output_schema 一致：
+    {name, description, priority}。
 
     Args:
         profile: 用户职业档案
@@ -28,103 +43,62 @@ def create_tasks_from_roadmap(profile: CareerProfile) -> list[Task]:
     phases = roadmap.get("phases", [])
 
     tasks = []
-    task_id = 1
 
     for phase_idx, phase in enumerate(phases):
+        phase_id = phase.get("id") or f"phase_{phase_idx + 1}"
         phase_name = phase.get("name", f"阶段 {phase_idx + 1}")
-        phase_id = f"phase_{phase_idx + 1}"
 
         for ms_idx, milestone in enumerate(phase.get("milestones", [])):
             ms_name = milestone.get("name", f"里程碑 {ms_idx + 1}")
-            ms_id = f"{phase_id}_ms_{ms_idx + 1}"
+            ms_id = milestone.get("id") or f"{phase_id}_ms_{ms_idx + 1}"
 
             # 从里程碑的 tasks 字段生成任务
             for task_def in milestone.get("tasks", []):
                 task = Task(
-                    id=f"task_{task_id:03d}",
+                    id=next_task_id_for(tasks),
                     name=task_def.get("name", ""),
                     description=task_def.get("description", ""),
                     phase_id=phase_id,
                     milestone_id=ms_id,
-                    estimated_days=task_def.get("estimated_days", 1),
                     priority=task_def.get("priority", "medium"),
                 )
                 tasks.append(task)
-                task_id += 1
 
             # 如果里程碑没有 tasks 字段，用里程碑本身作为任务
             if not milestone.get("tasks"):
-                duration_days = _parse_duration(milestone.get("duration", "1天"))
-                task = Task(
-                    id=f"task_{task_id:03d}",
+                tasks.append(Task(
+                    id=next_task_id_for(tasks),
                     name=ms_name,
                     description=milestone.get("description", ""),
                     phase_id=phase_id,
                     milestone_id=ms_id,
-                    estimated_days=duration_days,
                     priority="medium",
-                )
-                tasks.append(task)
-                task_id += 1
+                ))
+
+        # 阶段没有任何可执行内容时，用阶段名兜底，保证阶段可追踪
+        phase_task_count = sum(1 for t in tasks if t.phase_id == phase_id)
+        if phase_task_count == 0:
+            tasks.append(Task(
+                id=next_task_id_for(tasks),
+                name=f"推进阶段：{phase_name}",
+                description=phase.get("goal", ""),
+                phase_id=phase_id,
+                priority="medium",
+            ))
 
     return tasks
 
 
-def _parse_duration(duration_str: str) -> int:
-    """解析时长字符串为天数。
-
-    Args:
-        duration_str: 时长字符串，如 "2周", "3天", "1个月"
-
-    Returns:
-        天数
-    """
-    duration_str = duration_str.strip()
-
-    if "周" in duration_str:
-        try:
-            weeks = int(duration_str.replace("周", "").strip())
-            return weeks * 7
-        except ValueError:
-            return 7
-    elif "月" in duration_str:
-        try:
-            months = int(duration_str.replace("个月", "").replace("月", "").strip())
-            return months * 30
-        except ValueError:
-            return 30
-    elif "天" in duration_str:
-        try:
-            return int(duration_str.replace("天", "").strip())
-        except ValueError:
-            return 1
-    else:
-        try:
-            return int(duration_str)
-        except ValueError:
-            return 1
-
-
-def set_deadlines(tasks: list[Task], start_date: str | None = None) -> list[Task]:
-    """为任务设置截止日期。
-
-    Args:
-        tasks: 任务列表
-        start_date: 开始日期，格式为 ISO 格式，默认为今天
-
-    Returns:
-        更新后的任务列表
-    """
-    if start_date:
-        current_date = datetime.fromisoformat(start_date)
-    else:
-        current_date = datetime.now()
-
-    for task in tasks:
-        task.deadline = current_date.isoformat()
-        current_date += timedelta(days=max(1, int(task.estimated_days)))
-
-    return tasks
+def next_task_id_for(existing: list[Task]) -> str:
+    """在构建中的列表里生成下一个任务 ID。"""
+    max_num = 0
+    for task in existing:
+        if task.id.startswith("task_"):
+            try:
+                max_num = max(max_num, int(task.id[5:]))
+            except ValueError:
+                continue
+    return f"task_{max_num + 1:03d}"
 
 
 def checkin_task(
@@ -169,111 +143,94 @@ def checkin_task(
     return profile, checkin
 
 
-def check_overdue_tasks(profile: CareerProfile) -> list[Task]:
-    """检查超期任务。
+def record_capability_evidence(
+    profile: CareerProfile,
+    task: Task,
+    notes: str = "",
+) -> dict[str, Any]:
+    """将完成任务沉淀为能力证据，写入 have.capability_evidence。
 
-    Args:
-        profile: 用户职业档案
+    用户完成的任务是真实水平的佐证，目标变更重新分析时自动成为输入。
 
     Returns:
-        超期任务列表
+        写入的证据条目
     """
-    overdue = []
+    entry = {
+        "task": task.name,
+        "milestone": task.milestone_id,
+        "completed_at": task.completed_at or "",
+    }
+    if notes:
+        entry["notes"] = notes
+
+    have = profile.have
+    evidence_list = have.setdefault("capability_evidence", [])
+    if isinstance(evidence_list, list):
+        evidence_list.append(entry)
+
+    profile.section_updated_at["have"] = profile.updated_at
+    return entry
+
+
+def collect_completed_evidence(profile: CareerProfile) -> list[dict[str, Any]]:
+    """重建任务前调用：把已完成/已跳过任务的进度沉淀为能力证据。"""
+    entries: list[dict[str, Any]] = []
+    finished = [t for t in profile.tasks if t.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED)]
+    checkin_notes = {c.task_id: c.notes for c in profile.checkins}
+
+    for task in finished:
+        entry = {
+            "task": task.name,
+            "phase": task.phase_id,
+            "status": task.status,
+            "completed_at": task.completed_at or "",
+        }
+        notes = checkin_notes.get(task.id, "")
+        if notes:
+            entry["notes"] = notes
+        entries.append(entry)
+
+    return entries
+
+
+def current_phase_view(profile: CareerProfile) -> dict[str, Any] | None:
+    """定位当前阶段：第一个存在未完成任务的阶段。
+
+    Returns:
+        {"phase_id", "phase_name", "next_tasks", "done", "total"}，
+        全部完成时返回 None。
+    """
+    done_status = (TaskStatus.COMPLETED, TaskStatus.SKIPPED)
     for task in profile.tasks:
-        if task.is_overdue():
-            task.status = TaskStatus.OVERDUE
-            overdue.append(task)
-    return overdue
+        if task.status not in done_status:
+            break
+    else:
+        return None
 
+    roadmap = profile.plan.get("roadmap", profile.plan)
+    phases = roadmap.get("phases", [])
+    phase_names = {}
+    for idx, phase in enumerate(phases):
+        phase_id = phase.get("id") or f"phase_{idx + 1}"
+        phase_names[phase_id] = phase.get("name", phase_id)
 
-def compress_schedule(profile: CareerProfile, overdue_days: float) -> list[dict[str, Any]]:
-    """压缩后续任务时长。
+    first_open = next(t for t in profile.tasks if t.status not in done_status)
+    phase_id = first_open.phase_id
 
-    Args:
-        profile: 用户职业档案
-        overdue_days: 超期天数
+    phase_tasks = [t for t in profile.tasks if t.phase_id == phase_id]
+    open_tasks = [t for t in phase_tasks if t.status not in done_status]
 
-    Returns:
-        调整记录列表
-    """
-    pending_tasks = [t for t in profile.tasks if t.status == TaskStatus.PENDING]
-    if not pending_tasks:
-        return []
-
-    # 计算每个任务需要压缩的天数
-    compress_per_task = overdue_days / len(pending_tasks)
-    changes = []
-
-    for task in pending_tasks:
-        old_days = task.estimated_days
-        new_days = max(0.5, old_days - compress_per_task)
-        task.estimated_days = round(new_days, 1)
-
-        changes.append({
-            "type": "compress_task",
-            "task_id": task.id,
-            "task_name": task.name,
-            "old_days": old_days,
-            "new_days": new_days,
-        })
-
-    # 重新计算截止日期
-    _recalculate_deadlines(profile)
-
-    return changes
-
-
-def _recalculate_deadlines(profile: CareerProfile) -> None:
-    """重新计算所有待办任务的截止日期。"""
-    pending_tasks = [t for t in profile.tasks if t.status == TaskStatus.PENDING]
-    if not pending_tasks:
-        return
-
-    current_date = datetime.now()
-    for task in pending_tasks:
-        task.deadline = current_date.isoformat()
-        current_date += timedelta(days=max(1, int(task.estimated_days)))
-
-
-def add_depth_tasks(profile: CareerProfile, task_id: str) -> list[Task]:
-    """为提前完成的任务添加深度任务。
-
-    Args:
-        profile: 用户职业档案
-        task_id: 提前完成的任务 ID
-
-    Returns:
-        新增的任务列表
-    """
-    task = profile.get_task(task_id)
-    if not task:
-        return []
-
-    # 创建一个深度任务
-    depth_task = Task(
-        id=f"task_{len(profile.tasks) + 1:03d}",
-        name=f"{task.name}（深入）",
-        description=f"深入学习 {task.name} 的高级内容",
-        phase_id=task.phase_id,
-        milestone_id=task.milestone_id,
-        estimated_days=task.estimated_days,
-        priority=task.priority,
-    )
-
-    profile.add_task(depth_task)
-    return [depth_task]
+    return {
+        "phase_id": phase_id,
+        "phase_name": phase_names.get(phase_id, phase_id),
+        "next_tasks": open_tasks[:5],
+        "done": len(phase_tasks) - len(open_tasks),
+        "total": len(phase_tasks),
+    }
 
 
 def format_task_list(tasks: list[Task], title: str = "任务列表") -> str:
-    """格式化任务列表。
-
-    Args:
-        tasks: 任务列表
-        title: 标题
-
-    Returns:
-        格式化的 Markdown 文本
-    """
+    """格式化任务列表。"""
     lines = [f"## {title}", ""]
 
     if not tasks:
@@ -284,30 +241,19 @@ def format_task_list(tasks: list[Task], title: str = "任务列表") -> str:
     pending = [t for t in tasks if t.status == TaskStatus.PENDING]
     in_progress = [t for t in tasks if t.status == TaskStatus.IN_PROGRESS]
     completed = [t for t in tasks if t.status == TaskStatus.COMPLETED]
-    overdue = [t for t in tasks if t.status == TaskStatus.OVERDUE]
+    skipped = [t for t in tasks if t.status == TaskStatus.SKIPPED]
 
     if in_progress:
         lines.append("### 进行中")
         for t in in_progress:
             lines.append(f"- 🔵 **{t.name}** (ID: {t.id})")
-            if t.deadline:
-                lines.append(f"  截止: {t.deadline[:10]}")
         lines.append("")
 
     if pending:
         lines.append("### 待办")
         for t in pending:
-            lines.append(f"- ⚪ **{t.name}** (ID: {t.id})")
-            if t.deadline:
-                lines.append(f"  截止: {t.deadline[:10]}")
-            lines.append(f"  预计: {t.estimated_days}天")
-        lines.append("")
-
-    if overdue:
-        lines.append("### ⚠️ 超期")
-        for t in overdue:
-            days = t.days_overdue()
-            lines.append(f"- 🔴 **{t.name}** (ID: {t.id}) - 超期 {days:.1f} 天")
+            icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t.priority, "⚪")
+            lines.append(f"- {icon} **{t.name}** (ID: {t.id})")
         lines.append("")
 
     if completed:
@@ -316,43 +262,36 @@ def format_task_list(tasks: list[Task], title: str = "任务列表") -> str:
             lines.append(f"- ✅ {t.name}")
         lines.append("")
 
+    if skipped:
+        lines.append("### ⏭️ 已跳过")
+        for t in skipped:
+            lines.append(f"- ⏭️ {t.name}")
+        lines.append("")
+
     return "\n".join(lines)
 
 
 def format_progress_overview(profile: CareerProfile) -> str:
-    """格式化进度概览。
-
-    Args:
-        profile: 用户职业档案
-
-    Returns:
-        格式化的进度概览
-    """
-    lines = []
-
-    # 统计
+    """格式化整体进度概览。"""
     total = len(profile.tasks)
-    completed = len([t for t in profile.tasks if t.status == TaskStatus.COMPLETED])
-    in_progress = len([t for t in profile.tasks if t.status == TaskStatus.IN_PROGRESS])
-    pending = len([t for t in profile.tasks if t.status == TaskStatus.PENDING])
-    overdue = len([t for t in profile.tasks if t.status == TaskStatus.OVERDUE])
+    completed = sum(1 for t in profile.tasks if t.status == TaskStatus.COMPLETED)
+    in_progress = sum(1 for t in profile.tasks if t.status == TaskStatus.IN_PROGRESS)
+    pending = sum(1 for t in profile.tasks if t.status == TaskStatus.PENDING)
+    skipped = sum(1 for t in profile.tasks if t.status == TaskStatus.SKIPPED)
 
-    # 进度条
     pct = int(completed / total * 100) if total > 0 else 0
     bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
 
-    lines.append(f"## 📊 整体进度：{pct}% [{bar}]")
-    lines.append("")
-    lines.append(f"总计 {total} 个任务：")
-    lines.append(f"- ✅ 已完成：{completed}")
-    lines.append(f"- 🔵 进行中：{in_progress}")
-    lines.append(f"- ⚪ 待办：{pending}")
-    if overdue > 0:
-        lines.append(f"- 🔴 超期：{overdue}")
-    lines.append("")
-
-    # 打卡统计
-    lines.append(f"共打卡 {len(profile.checkins)} 次")
-    lines.append("")
+    lines = [
+        f"## 📊 整体进度：{pct}% [{bar}]",
+        "",
+        f"总计 {total} 个任务：",
+        f"- ✅ 已完成：{completed}",
+        f"- 🔵 进行中：{in_progress}",
+        f"- ⚪ 待办：{pending}",
+    ]
+    if skipped:
+        lines.append(f"- ⏭️ 已跳过：{skipped}")
+    lines += ["", f"共打卡 {len(profile.checkins)} 次", ""]
 
     return "\n".join(lines)

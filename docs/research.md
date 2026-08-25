@@ -149,7 +149,7 @@
 | 状态机引导 | Non-Tech Job Navigator | intake 阶段 |
 | 本地优先 + JSON | Career Compass | 数据存储 |
 | 任务级打卡 + 洞察调整 | Plan Tracker MCP | checkin_task / trigger_insight |
-| ICS 日历导出 | Syllabus-to-Study-Plan MCP | generate_schedule |
+| ~~ICS 日历导出~~ | Syllabus-to-Study-Plan MCP | 已移除（2026-08-26 时间退场：日程由 LLM 对话中一次性产出，系统不存储） |
 
 ### 10.3 四阶段路线图模型
 

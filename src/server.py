@@ -2,6 +2,7 @@
 
 import json
 import warnings
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,28 +16,18 @@ except ImportError:
 
 from mcp.server.fastmcp import FastMCP
 
-from .tools.errors import (
-    AnalysisError,
-    CareerKitError,
-    InvalidJsonError,
-    InvalidSectionError,
-    MissingDataError,
-    error_response,
-)
-from .tools.gap_analyzer import format_gap_report, parse_gap_analysis
+from .tools.errors import InvalidJsonError, error_response
+from .tools.gap_analyzer import format_gap_report
 from .tools.methodology import build_methodology_context
-from .tools.plan_importer import compare_plans, format_diff_report, parse_plan_file
+from .tools.plan_importer import parse_plan_file
 from .tools.roadmap import format_roadmap, parse_roadmap
-from .tools.schedule import format_schedule, generate_ics, parse_schedule
 from .tools.profile import (
-    get_plan_history,
     load_profile,
     merge_section,
-    restore_plan_version,
     save_plan_snapshot,
     save_profile,
 )
-from .models import Adjustment, JourneyEntry
+from .models import JourneyEntry
 from .tools.resume_parser import extract_text
 from .tools.session import get_welcome_message
 from .scrapers import list_scrapers, search_company_jobs, get_job_detail
@@ -171,19 +162,18 @@ def intake(section: str, data: str) -> str:
     每次调用填充一个 section，可以多次调用。
 
     Args:
-        section: 填充到哪个 section，可选 who / have / want / plan
+        section: 填充到哪个 section，只接受 who / have / want
             - who: 你是谁（姓名、教育、状态）
-            - have: 你有什么（技能、经历、资源）
+            - have: 你有什么（技能、经历、资源）；关键技能请附带证据与置信度
             - want: 你想要什么（目标岗位、行业、薪资）
-            - plan: 计划（通常由 generate_roadmap 自动生成）
         data: 用户提供的信息，期望是 JSON 字符串
             示例：'{"name":"张三", "education":"计算机本科", "skills":["Python", "React"]}'
     """
-    if section not in ("who", "have", "want", "plan"):
+    if section not in ("who", "have", "want"):
         return error_response(
             "INVALID_SECTION",
-            f"section 必须是 who/have/want/plan，收到的是「{section}」",
-            {"received": section, "valid": ["who", "have", "want", "plan"]},
+            f"section 必须是 who/have/want，收到的是「{section}」",
+            {"received": section, "valid": ["who", "have", "want"]},
         )
 
     profile = merge_section(section, data)
@@ -248,6 +238,7 @@ def import_jd(jd_text: str) -> str:
         jd_data = {"raw": jd_text}
 
     profile.target_jd = jd_data
+    profile.section_updated_at["target_jd"] = datetime.now().isoformat()
     profile.touch()
     save_profile(profile)
 
@@ -398,7 +389,7 @@ def generate_roadmap() -> str:
     设计分阶段路线图，然后调用 save_roadmap(roadmap_json) 保存。
 
     前置条件：差距分析已完成（save_gap_analysis 已调用）。
-    后续步骤：LLM 生成路线图后调用 save_roadmap，然后调用 generate_schedule。
+    后续步骤：LLM 生成路线图后调用 save_roadmap，然后调用 generate_tasks。
     """
     profile = load_profile()
 
@@ -430,23 +421,26 @@ def save_roadmap(roadmap_json: str) -> str:
     Args:
         roadmap_json: 路线图的 JSON 字符串
 
-    Schema:
+    Schema（与 sop/roadmap.yaml 一致）:
         {
+            "strategy_summary": "整体策略说明",
             "phases": [                  // 阶段列表
                 {
+                    "type": "learn",              // learn/project/intern/research
                     "name": "基础学习",           // 阶段名称
-                    "duration": "2周",            // 阶段时长
-                    "description": "学习基础",    // 阶段描述
+                    "goal": "掌握基础",           // 阶段目标
+                    "kpi": {"metric": "...", "target": "...", "evidence": "..."},
+                    "resume_value": "",           // project/intern/research 必填
                     "milestones": [               // 里程碑列表
                         {
                             "name": "Python 基础",        // 里程碑名称
-                            "duration": "3天",            // 里程碑时长
-                            "description": "学习 Python", // 里程碑描述
-                            "tasks": [                    // 任务列表
+                            "done_criteria": "能独立写出...", // 完成标准
+                            "deliverable": "",             // 交付物
+                            "tasks": [                     // 任务列表
                                 {
-                                    "name": "学习装饰器",           // 任务名称
-                                    "estimated_days": 1,           // 预计天数
-                                    "priority": "high"             // 优先级
+                                    "name": "学习装饰器",      // 任务名称
+                                    "description": "...",     // 可选
+                                    "priority": "high"        // 可选
                                 }
                             ]
                         }
@@ -454,6 +448,8 @@ def save_roadmap(roadmap_json: str) -> str:
                 }
             ]
         }
+
+    注意：不要输出任何时长类字段（duration/estimated_days 等），产品不规划时间。
     """
     try:
         roadmap_data = _parse_json_param(roadmap_json, "路线图")
@@ -466,9 +462,12 @@ def save_roadmap(roadmap_json: str) -> str:
     if profile.plan:
         save_plan_snapshot(source="before_roadmap")
 
-    # 解析并写入 plan
+    # 解析并写入 plan；新路线图 = 新阶段体系，历史审计记录作废
     parsed = parse_roadmap(json.dumps(roadmap_data, ensure_ascii=False))
     profile.plan = parsed
+    profile.audited_phases = []
+    profile.plan_saved_at = datetime.now().isoformat()
+    profile.section_updated_at["plan"] = profile.plan_saved_at
     profile.touch()
     save_profile(profile)
 
@@ -481,140 +480,11 @@ def save_roadmap(roadmap_json: str) -> str:
     return _json({
         "message": (
             f"路线图已保存。\n\n{report}\n\n"
-            "接下来可以调用 generate_schedule 获取具体日程。"
+            "接下来可以调用 generate_tasks 生成任务列表开始执行。"
         ),
-        "next_steps": ["generate_schedule"],
+        "next_steps": ["generate_tasks"],
         "context": {"phase": "roadmap_saved", "version": profile.version},
     })
-
-
-@mcp.tool()
-def generate_schedule(scope: str = "this_week") -> str:
-    """将路线图拆解为每日时间块日程表。
-
-    返回方法论上下文。LLM 按照方法论指引，将路线图任务分配到日程中，
-    然后调用 save_schedule(schedule_json) 保存。
-
-    Args:
-        scope: 范围，可选 today / this_week / this_month
-
-    前置条件：路线图已完成（save_roadmap 已调用）。
-    后续步骤：LLM 生成日程后调用 save_schedule，然后调用 export_ics 导出日历。
-    """
-    profile = load_profile()
-
-    if not profile.plan or not profile.plan.get("roadmap"):
-        return error_response(
-            "MISSING_DATA",
-            "请先调用 generate_roadmap 生成路线图，再生成日程。",
-            {"missing": "roadmap"},
-        )
-
-    ctx = build_methodology_context("schedule", profile)
-    ctx["profile"]["scope"] = scope
-
-    # 估算可用时间
-    from .tools.schedule import _estimate_available_time
-    available_time = _estimate_available_time(profile)
-    ctx["profile"]["available_time"] = available_time
-
-    return _json({
-        "methodology": ctx["methodology"],
-        "profile": ctx["profile"],
-        "instructions": (
-            f"范围：{scope}\n"
-            "请按照日程方法论指引：\n"
-            "1. 从路线图中提取当前范围内的任务\n"
-            "2. 按优先级和依赖关系分配到每日时间块\n"
-            "3. 调用 save_schedule(schedule_json) 保存结构化结果"
-        ),
-    })
-
-
-@mcp.tool()
-def save_schedule(schedule_json: str) -> str:
-    """保存日程表到档案。
-
-    Args:
-        schedule_json: 日程表的 JSON 字符串
-
-    Schema:
-        {
-            "schedule": [                // 日程列表
-                {
-                    "date": "2026-08-26",         // 日期
-                    "tasks": [                    // 任务列表
-                        {
-                            "name": "学习 Python",        // 任务名称
-                            "start_time": "09:00",        // 开始时间
-                            "end_time": "11:00",          // 结束时间
-                            "duration_hours": 2,          // 时长（小时）
-                            "priority": "high"            // 优先级
-                        }
-                    ]
-                }
-            ]
-        }
-    """
-    try:
-        schedule_data = _parse_json_param(schedule_json, "日程表")
-    except InvalidJsonError as exc:
-        return error_response(exc.code, exc.message, exc.details)
-
-    profile = load_profile()
-
-    # 解析并写入 plan
-    parsed = parse_schedule(json.dumps(schedule_data, ensure_ascii=False))
-    profile.plan["schedule"] = parsed.get("schedule", parsed)
-    profile.touch()
-    save_profile(profile)
-
-    # 格式化报告
-    report = format_schedule(parsed)
-
-    return _json({
-        "message": (
-            f"日程表已保存。\n\n{report}\n\n"
-            "如需导出 ICS 日历文件，请调用 export_ics。\n"
-            "开始执行后，请调用 generate_tasks 生成任务列表进行打卡追踪。"
-        ),
-        "next_steps": ["export_ics", "generate_tasks"],
-        "context": {"phase": "schedule_saved", "version": profile.version},
-    })
-
-
-@mcp.tool()
-def export_ics(start_date: str = "") -> str:
-    """导出日程为 ICS 日历文件。
-
-    Args:
-        start_date: 起始日期（YYYY-MM-DD），为空则从今天开始
-    """
-    import tempfile
-    from pathlib import Path
-
-    profile = load_profile()
-
-    schedule = profile.plan.get("schedule")
-    if not schedule:
-        return error_response(
-            "MISSING_DATA",
-            "请先调用 generate_schedule 生成日程。",
-            {"missing": "schedule"},
-        )
-
-    # 生成 ICS
-    ics_content = generate_ics({"schedule": schedule}, start_date)
-
-    # 写入临时文件
-    ics_path = Path(tempfile.gettempdir()) / "career_kit_schedule.ics"
-    ics_path.write_text(ics_content, encoding="utf-8")
-
-    return (
-        f"ICS 文件已生成：{ics_path}\n\n"
-        "可以导入到 Google Calendar / Outlook / Apple Calendar 等日历应用。\n"
-        "开始执行后，请调用 generate_tasks 生成任务列表进行打卡追踪。"
-    )
 
 
 @mcp.tool()
@@ -669,7 +539,7 @@ def import_plan(file_path: str) -> str:
     """导入已有的职业规划文档。
 
     支持 PDF、DOCX、Markdown、TXT 格式。
-    如果已有计划，会对比分析并询问保留哪些内容。
+    如果已有计划，会在对话中对比新旧内容，由用户决定取舍。
 
     Args:
         file_path: 计划文件的绝对路径
@@ -684,151 +554,20 @@ def import_plan(file_path: str) -> str:
 
     profile = load_profile()
 
-    # 如果没有旧计划，直接提示 LLM 填充
+    # 如果没有旧计划，提示 LLM 走标准路线图链路导入
     if not profile.plan:
         return (
             f"--- PLAN CONTENT ---\n{new_plan_text}\n--- END ---\n\n"
-            "这是新导入的计划文档。请根据内容调用 intake 工具填充 plan section：\n"
-            '示例：intake(section="plan", data=\'{"phases": [...], "timeline": "..."}\')\n\n'
-            "填充后请调用 save_plan_snapshot(source='imported', import_file='" + file_path + "') 保存版本快照。"
+            "这是新导入的计划文档。请将其整理为路线图结构后调用 save_roadmap(roadmap_json) 保存：\n"
+            "schema 参考 sop/roadmap.yaml 的 output_schema（任务字段为 name/description/priority）。"
         )
 
-    # 有旧计划时，需要 LLM 先解析新计划再对比
+    # 有旧计划时：对比与取舍在对话中完成，落盘走 save_roadmap
     return (
         f"--- NEW PLAN CONTENT ---\n{new_plan_text}\n--- END ---\n\n"
-        "检测到已有计划档案。请按以下步骤操作：\n\n"
-        "1. 将以上内容解析为结构化 JSON\n"
-        "2. 调用 compare_plan_versions(new_plan_json) 对比新旧计划\n"
-        "3. 根据对比结果询问用户保留哪些内容\n\n"
-        "用户可选择：\n"
-        "  A. 完全替换为新计划\n"
-        "  B. 合并新旧计划\n"
-        "  C. 保留旧计划，放弃导入"
+        "检测到已有计划档案。请在对话中向用户呈现新旧计划的差异，"
+        "由用户决定保留哪些内容；确认后把最终版整理为路线图结构，调用 save_roadmap(roadmap_json) 保存。"
     )
-
-
-@mcp.tool()
-def compare_plan_versions(new_plan: str) -> str:
-    """对比新旧计划版本，显示差异。
-
-    Args:
-        new_plan: 新计划的 JSON 字符串
-    """
-    profile = load_profile()
-
-    if not profile.plan:
-        return error_response(
-            "MISSING_DATA",
-            "当前没有已有计划，无需对比。请直接调用 intake 填充 plan section。",
-            {"missing": "plan"},
-        )
-
-    try:
-        new_plan_dict = _parse_json_param(new_plan, "新计划")
-    except InvalidJsonError as exc:
-        return error_response(exc.code, exc.message, exc.details)
-
-    diff = compare_plans(profile.plan, new_plan_dict)
-    report = format_diff_report(diff)
-
-    return (
-        f"【新旧计划对比报告】\n\n{report}\n\n"
-        "请选择操作：\n"
-        '  A. 完全替换 — 调用 replace_plan(new_plan_json)\n'
-        '  B. 合并计划 — 调用 merge_plan(new_plan_json)\n'
-        "  C. 保留旧版 — 不做任何操作"
-    )
-
-
-@mcp.tool()
-def replace_plan(new_plan: str) -> str:
-    """用新计划完全替换旧计划。
-
-    Args:
-        new_plan: 新计划的 JSON 字符串
-    """
-    try:
-        _parse_json_param(new_plan, "新计划")
-    except InvalidJsonError as exc:
-        return error_response(exc.code, exc.message, exc.details)
-
-    # 保存旧版本快照
-    save_plan_snapshot(source="replaced")
-
-    # 替换计划
-    profile = merge_section("plan", new_plan)
-
-    # 保存新版本快照
-    save_plan_snapshot(source="imported")
-
-    return f"计划已完全替换。已保存版本历史，可随时回溯。当前版本：v{profile.version}"
-
-
-@mcp.tool()
-def merge_plan(new_plan: str) -> str:
-    """合并新计划到已有计划。
-
-    Args:
-        new_plan: 新计划的 JSON 字符串（将深度合并到现有计划）
-    """
-    try:
-        _parse_json_param(new_plan, "新计划")
-    except InvalidJsonError as exc:
-        return error_response(exc.code, exc.message, exc.details)
-
-    # 保存旧版本快照
-    save_plan_snapshot(source="before_merge")
-
-    # 合并计划
-    profile = merge_section("plan", new_plan)
-
-    # 保存合并后版本快照
-    save_plan_snapshot(source="merged")
-
-    return f"计划已合并完成。已保存版本历史。当前版本：v{profile.version}"
-
-
-@mcp.tool()
-def list_plan_versions() -> str:
-    """查看计划版本历史列表。"""
-    history = get_plan_history()
-
-    if not history:
-        return "暂无计划版本历史。"
-
-    lines = ["【计划版本历史】\n"]
-    for v in history:
-        lines.append(
-            f"  v{v['version']} | {v['timestamp']} | 来源: {v['source']}"
-            + (f" | 文件: {v['import_file']}" if v['import_file'] else "")
-        )
-        lines.append(f"    摘要: {v['summary']}")
-        lines.append("")
-
-    lines.append("如需恢复到某个版本，请调用 restore_plan(version=N)")
-    return "\n".join(lines)
-
-
-@mcp.tool()
-def restore_plan(version: int) -> str:
-    """恢复计划到指定版本。
-
-    Args:
-        version: 要恢复的版本号
-    """
-    try:
-        # 先保存当前版本快照
-        save_plan_snapshot(source="before_restore")
-
-        # 恢复到指定版本
-        profile = restore_plan_version(version)
-
-        # 保存恢复后的版本快照
-        save_plan_snapshot(source="restored")
-
-        return f"已恢复到版本 v{version}。当前档案版本：v{profile.version}"
-    except ValueError as e:
-        return error_response("MISSING_DATA", str(e), {"version": version})
 
 
 @mcp.tool()
@@ -1029,14 +768,16 @@ def fetch_jd_detail(url: str, company: str = "") -> str:
 def generate_tasks() -> str:
     """从路线图生成任务列表。
 
-    何时调用：在 generate_roadmap 和 generate_schedule 之后调用，将路线图转化为可执行的任务。
+    何时调用：在 save_roadmap 之后调用，将路线图转化为可执行的任务。
     前置条件：档案中已有路线图（plan.roadmap）。
-    后续步骤：调用 get_today_tasks 获取今日任务。
+    后续步骤：调用 get_next_tasks 查看当前阶段的下一步任务。
+
+    注意：重建会清空旧任务列表；已完成的进度会自动沉淀为能力证据写入档案，不会丢失。
     """
     from .tools.task_manager import (
+        collect_completed_evidence,
         create_tasks_from_roadmap,
         format_task_list,
-        set_deadlines,
     )
 
     profile = load_profile()
@@ -1048,37 +789,42 @@ def generate_tasks() -> str:
             {"section": "plan"},
         )
 
-    # 清空旧任务
-    profile.tasks = []
+    # 重建前：把已完成/已跳过的进度沉淀为能力证据（目标变了，努力不白费）
+    evidence = collect_completed_evidence(profile)
+    if evidence:
+        have_evidence = profile.have.setdefault("capability_evidence", [])
+        if isinstance(have_evidence, list):
+            have_evidence.extend(evidence)
 
-    # 从路线图生成任务
+    # 清空旧任务并从路线图生成
+    profile.tasks = []
     tasks = create_tasks_from_roadmap(profile)
 
-    # 设置截止日期
-    tasks = set_deadlines(tasks)
-
-    # 添加到档案
     for task in tasks:
         profile.add_task(task)
 
     save_profile(profile)
 
+    migrated_note = (
+        f"已将 {len(evidence)} 条历史完成记录沉淀为能力证据。\n" if evidence else ""
+    )
     return _json({
-        "message": f"已从路线图生成 {len(tasks)} 个任务。",
+        "message": f"{migrated_note}已从路线图生成 {len(tasks)} 个任务。",
         "tasks": format_task_list(tasks, "生成的任务"),
-        "next_steps": ["get_today_tasks"],
+        "next_steps": ["get_next_tasks"],
         "context": {"phase": "tasks_generated", "task_count": len(tasks)},
     })
 
 
 @mcp.tool()
-def get_today_tasks() -> str:
-    """获取今日待办任务。
+def get_next_tasks() -> str:
+    """获取当前阶段的下一步任务。
 
-    何时调用：用户想查看今天需要做什么时调用。
-    返回待办任务列表，包括进行中和待办的任务。
+    何时调用：用户想知道「现在该做什么」时调用。
+    返回当前阶段（第一个有未完成任务的阶段）的接下来几个任务和阶段进度。
+    产品不规划时间——顺序归产品，时间归用户。
     """
-    from .tools.task_manager import format_task_list, format_progress_overview
+    from .tools.task_manager import current_phase_view, format_progress_overview
 
     profile = load_profile()
 
@@ -1089,24 +835,30 @@ def get_today_tasks() -> str:
             "context": {"phase": "no_tasks"},
         })
 
-    today_tasks = profile.get_today_tasks()
-    overdue_tasks = profile.get_overdue_tasks()
+    view = current_phase_view(profile)
 
     lines = []
 
-    if overdue_tasks:
-        lines.append(format_task_list(overdue_tasks, "⚠️ 超期任务"))
+    if view is None:
+        lines.append("🎉 所有阶段已完成！建议回顾目标，规划下一步方向。")
+        next_step = "trigger_insight(event)"
+    else:
+        pct = int(view["done"] / view["total"] * 100) if view["total"] else 0
+        lines.append(f"## 🎯 当前阶段：{view['phase_name']}（{view['done']}/{view['total']}，{pct}%）")
         lines.append("")
+        lines.append("### 接下来做")
+        for t in view["next_tasks"]:
+            icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t.priority, "⚪")
+            status_mark = "🔵" if t.status == "in_progress" else icon
+            desc = f"—{t.description}" if t.description else ""
+            lines.append(f"- {status_mark} **{t.name}** (ID: {t.id}){desc}")
+        lines.append("")
+        next_step = "checkin_task"
 
-    lines.append(format_task_list(today_tasks, "📋 今日任务"))
-    lines.append("")
     lines.append(format_progress_overview(profile))
-
-    # 打卡提示
-    if today_tasks:
-        lines.append("---")
-        lines.append("完成任务后，请调用 checkin_task 打卡。")
-        lines.append(f"示例：checkin_task(task_id=\"{today_tasks[0].id}\")")
+    lines.append("---")
+    lines.append("完成任务后，请调用 checkin_task 打卡。")
+    lines.append("节奏由用户掌握：快了可以加深或推进下一项，慢了随时调整顺序。")
 
     return "\n".join(lines)
 
@@ -1116,21 +868,19 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
     """打卡任务。
 
     何时调用：用户完成或跳过某个任务时调用。
-    会自动检查超期情况并触发洞察。
+    完成的任务会沉淀为能力证据写入档案。
 
     Args:
-        task_id: 任务 ID（从 get_today_tasks 获取）
+        task_id: 任务 ID（从 get_next_tasks 获取）
         status: 打卡状态（completed 或 skipped）
         notes: 备注（可选）
     """
     from .tools.task_manager import (
-        add_depth_tasks,
-        check_overdue_tasks,
         checkin_task as do_checkin,
-        compress_schedule,
         format_progress_overview,
+        record_capability_evidence,
     )
-    from .tools.insight import check_stage_completion
+    from .tools.insight import completed_phase_ids
 
     profile = load_profile()
 
@@ -1139,36 +889,28 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
     except ValueError as e:
         return error_response("MISSING_DATA", str(e), {"task_id": task_id})
 
-    # 检查是否有超期任务
-    overdue_tasks = check_overdue_tasks(profile)
+    task = profile.get_task(task_id)
 
-    # 检查阶段是否完成
-    stage_completed = check_stage_completion(profile)
+    # 能力证据沉淀
+    if status == "completed" and task:
+        record_capability_evidence(profile, task, notes)
+
+    # 阶段完成检测（排除已审计过的阶段）
+    newly_completed = [pid for pid in completed_phase_ids(profile) if pid not in profile.audited_phases]
 
     lines = []
-    task = profile.get_task(task_id)
     lines.append(f"✅ 已打卡：{task.name if task else task_id}")
+    if status == "skipped":
+        lines[0] = f"⏭️ 已跳过：{task.name if task else task_id}"
     lines.append("")
 
-    # 超期提醒
-    if overdue_tasks:
-        lines.append(f"⚠️ 有 {len(overdue_tasks)} 个任务超期：")
-        for t in overdue_tasks:
-            lines.append(f"- {t.name}（超期 {t.days_overdue():.1f} 天）")
+    if newly_completed:
+        lines.append(f"🎯 恭喜！你完成了阶段「{newly_completed[0]}」的全部任务。")
+        lines.append("建议调用 trigger_insight(trigger_type=\"stage_audit\") 进行阶段审计。")
         lines.append("")
-        lines.append("建议调用 trigger_insight 检查是否需要调整计划。")
 
-    # 阶段完成提醒
-    if stage_completed:
-        lines.append("")
-        lines.append("🎯 恭喜！你已完成一个阶段。建议调用 trigger_insight 进行阶段审计。")
-
-    # 提前完成 - 添加深度任务
-    if status == "completed" and task and not task.is_overdue():
-        depth_tasks = add_depth_tasks(profile, task_id)
-        if depth_tasks:
-            lines.append("")
-            lines.append(f"💡 提前完成！已添加深度任务：{depth_tasks[0].name}")
+    if status == "completed" and task:
+        lines.append("💡 如果完成得轻松，可以考虑加深难度或直接推进下一项——由你和用户在对话中决定。")
 
     save_profile(profile)
 
@@ -1179,13 +921,12 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
 
 
 @mcp.tool()
-def trigger_insight(trigger_type: str = "proactive", event_description: str = "") -> str:
+def trigger_insight(trigger_type: str = "stage_audit", event_description: str = "") -> str:
     """触发洞察检查。
 
     何时调用：
     - 用户完成阶段后（trigger_type="stage_audit"）
-    - 用户报告事件时（trigger_type="event"）
-    - 定期检查进度时（trigger_type="proactive"）
+    - 用户报告事件时（trigger_type="event"，如拿到面试、目标变更）
 
     工作流程：
     1. 调用 trigger_insight 获取分析 prompt
@@ -1194,13 +935,20 @@ def trigger_insight(trigger_type: str = "proactive", event_description: str = ""
     4. 调用 apply_insight(insight_json) 应用结果
 
     Args:
-        trigger_type: 触发类型（stage_audit, event, proactive）
+        trigger_type: 触发类型（stage_audit / event）
         event_description: 事件描述（当 trigger_type 为 event 时必填）
 
     Returns:
         包含分析 prompt 和使用说明的字典
     """
-    from .tools.insight import build_insight_prompt
+    from .tools.insight import VALID_TRIGGER_TYPES, build_insight_prompt
+
+    if trigger_type not in VALID_TRIGGER_TYPES:
+        return error_response(
+            "INVALID_SECTION",
+            f"trigger_type 必须是 stage_audit/event，收到的是「{trigger_type}」",
+            {"received": trigger_type, "valid": list(VALID_TRIGGER_TYPES)},
+        )
 
     profile = load_profile()
 
@@ -1218,12 +966,13 @@ def trigger_insight(trigger_type: str = "proactive", event_description: str = ""
         "message": "洞察分析任务已准备。请根据以下 prompt 进行分析，然后调用 apply_insight 应用结果。",
         "prompt": prompt,
         "output_format": {
+            "trigger_type": trigger_type,
             "status": "on_track|behind|ahead|need_adjustment",
             "summary": "进度总结",
             "insights": ["洞察1", "洞察2"],
             "adjustment_needed": True,
             "adjustment_reason": "调整原因",
-            "changes": [{"type": "compress_task|add_task", "task_id": "task_001", "details": {}}],
+            "changes": [{"type": "add_task|remove_task|modify_task", "task_id": "task_001", "details": {}}],
             "user_message": "给用户的消息"
         },
         "next_steps": ["apply_insight"],
@@ -1242,6 +991,7 @@ def apply_insight(insight_json: str) -> str:
 
     Schema:
         {
+            "trigger_type": "stage_audit",  // 回传触发类型：stage_audit/event
             "status": "on_track",        // 状态：on_track/behind/ahead/need_adjustment
             "summary": "进度正常",        // 进度总结
             "insights": [                // 洞察列表
@@ -1251,18 +1001,19 @@ def apply_insight(insight_json: str) -> str:
             "adjustment_needed": false,  // 是否需要调整
             "adjustment_type": "auto",   // 调整类型：auto/manual
             "adjustment_reason": "",     // 调整原因
-            "changes": [                 // 调整列表
+            "changes": [                 // 调整列表（产品不规划时间，无压缩时长类调整）
                 {
-                    "type": "compress_task",  // 类型：compress_task/add_task/remove_task
-                    "task_id": "task_001",    // 任务 ID
+                    "type": "add_task",       // 类型：add_task/remove_task/modify_task
+                    "task_id": "task_001",    // 任务 ID（add_task 时省略）
                     "details": {              // 详情
-                        "new_days": 2
+                        "name": "新任务名"
                     }
                 }
             ],
             "user_message": "给用户的消息"
         }
     """
+    from .models import Adjustment
     from .tools.insight import (
         apply_adjustment,
         format_insight_report,
@@ -1327,64 +1078,6 @@ def get_progress() -> str:
 
 
 @mcp.tool()
-def suggest_adjustment() -> str:
-    """AI 提出调整建议。
-
-    何时调用：用户想让 AI 检查进度并提出调整建议时调用。
-    返回调整建议，用户确认后可调用 apply_adjustment 应用。
-    """
-    from .tools.task_manager import check_overdue_tasks, compress_schedule
-
-    profile = load_profile()
-
-    if not profile.tasks:
-        return _json({
-            "message": "暂无任务，请先调用 generate_tasks。",
-            "next_steps": ["generate_tasks"],
-            "context": {"phase": "no_tasks"},
-        })
-
-    # 检查超期任务
-    overdue_tasks = check_overdue_tasks(profile)
-
-    if not overdue_tasks:
-        return _json({
-            "message": "所有任务都在计划内，无需调整。",
-            "context": {"phase": "no_adjustment_needed"},
-        })
-
-    # 计算超期天数
-    total_overdue = sum(t.days_overdue() for t in overdue_tasks)
-
-    # 压缩后续任务
-    changes = compress_schedule(profile, total_overdue)
-
-    # 保存调整记录
-    adjustment = Adjustment(
-        trigger=f"{len(overdue_tasks)} 个任务超期",
-        trigger_type="proactive",
-        reason=f"超期 {total_overdue:.1f} 天，压缩后续任务",
-        changes=changes,
-        approved=True,
-    )
-    profile.add_adjustment(adjustment)
-    save_profile(profile)
-
-    lines = []
-    lines.append("## 🔄 调整建议")
-    lines.append("")
-    lines.append(f"发现 {len(overdue_tasks)} 个超期任务，共超期 {total_overdue:.1f} 天。")
-    lines.append("")
-    lines.append("### 调整方案")
-    for change in changes:
-        lines.append(f"- {change['task_name']}：{change['old_days']}天 → {change['new_days']}天")
-    lines.append("")
-    lines.append("已自动应用调整。")
-
-    return "\n".join(lines)
-
-
-@mcp.tool()
 def get_workflow_status() -> str:
     """获取当前工作流状态和下一步建议。
 
@@ -1397,6 +1090,19 @@ def get_workflow_status() -> str:
         包含当前阶段、已完成步骤、下一步建议的字典
     """
     profile = load_profile()
+
+    # 目标变更检测：want / target_jd 在路线图保存之后被更新过 → 建议重新分析
+    goal_change_alert = ""
+    plan_saved_at = profile.plan_saved_at
+    if profile.plan.get("roadmap") and plan_saved_at:
+        for key in ("want", "target_jd"):
+            updated_at = profile.section_updated_at.get(key, "")
+            if updated_at and updated_at > plan_saved_at:
+                goal_change_alert = (
+                    f"⚠️ 检测到目标（{key}）在路线图生成之后发生了变更。\n"
+                    "旧路线图可能已不适用，建议重新调用 analyze_gaps 进行分析。\n\n"
+                )
+                break
 
     # 确定当前阶段
     phase = "not_started"
@@ -1434,14 +1140,7 @@ def get_workflow_status() -> str:
             completed_steps.append("generate_roadmap")
 
     if profile.plan.get("roadmap"):
-        phase = "scheduling"
-        if not profile.plan.get("schedule"):
-            next_step = "generate_schedule"
-        else:
-            completed_steps.append("generate_schedule")
-
-    if profile.plan.get("schedule"):
-        phase = "task_management"
+        phase = "execution_prep"
         if not profile.tasks:
             next_step = "generate_tasks"
         else:
@@ -1449,25 +1148,25 @@ def get_workflow_status() -> str:
 
     if profile.tasks:
         phase = "execution"
-        completed_tasks = [t for t in profile.tasks if t.status == "completed"]
-        overdue_tasks = [t for t in profile.tasks if t.is_overdue()]
+        finished_status = ("completed", "skipped")
+        all_finished = all(t.status in finished_status for t in profile.tasks)
 
-        if overdue_tasks:
-            next_step = "trigger_insight(proactive)"
-        elif len(completed_tasks) == len(profile.tasks):
+        if all_finished:
             phase = "completed"
-            next_step = "目标达成！"
+            next_step = "目标达成！可回顾目标，规划下一步。"
         else:
-            next_step = "get_today_tasks"
+            next_step = "get_next_tasks"
 
     # 构建状态报告
     total_tasks = len(profile.tasks)
-    completed_tasks = len([t for t in profile.tasks if t.status == "completed"])
-    overdue_tasks = len([t for t in profile.tasks if t.is_overdue()])
+    completed_tasks = sum(1 for t in profile.tasks if t.status == "completed")
 
     lines = []
     lines.append(f"## 当前状态：{phase}")
     lines.append("")
+    if goal_change_alert:
+        lines.append(goal_change_alert.rstrip())
+        lines.append("")
     lines.append(f"**下一步**：{next_step}")
     lines.append("")
     lines.append("### 已完成步骤")
@@ -1477,18 +1176,129 @@ def get_workflow_status() -> str:
     lines.append("### 任务统计")
     lines.append(f"- 总计：{total_tasks} 个")
     lines.append(f"- 已完成：{completed_tasks} 个")
-    if overdue_tasks > 0:
-        lines.append(f"- 超期：{overdue_tasks} 个")
     lines.append("")
     lines.append("### 工作流指南")
     lines.append("- 建档：start_session → intake(who/have/want) → finalize_profile")
     lines.append("- 分析：analyze_gaps → save_gap_analysis")
-    lines.append("- 规划：generate_roadmap → save_roadmap")
-    lines.append("- 日程：generate_schedule → save_schedule")
-    lines.append("- 任务：generate_tasks → get_today_tasks")
-    lines.append("- 执行：checkin_task → trigger_insight → apply_insight")
+    lines.append("- 规划：generate_roadmap → save_roadmap → generate_tasks")
+    lines.append("- 执行：get_next_tasks → checkin_task → trigger_insight(stage_audit/event) → apply_insight")
+    lines.append("- 产出：export_dashboard 生成阶段进度仪表盘")
+    lines.append("")
+    lines.append("节奏原则：顺序归产品，时间归用户——不为任务设定时限。")
 
     return "\n".join(lines)
+
+
+@mcp.tool()
+def export_dashboard() -> str:
+    """生成阶段进度仪表盘（自包含 HTML 文件）。
+
+    何时调用：用户想直观查看整体进度时调用。
+    一次性产出：HTML 内嵌当前档案数据快照，双击即可在浏览器查看，无需服务器。
+    """
+    import tempfile
+
+    profile = load_profile()
+
+    finished_status = ("completed", "skipped")
+    total_tasks = len(profile.tasks)
+    completed = sum(1 for t in profile.tasks if t.status == "completed")
+    skipped = sum(1 for t in profile.tasks if t.status == "skipped")
+
+    # 阶段视图
+    roadmap = profile.plan.get("roadmap", profile.plan)
+    phases_html = ""
+    phases = roadmap.get("phases", []) if isinstance(roadmap, dict) else []
+    for idx, phase in enumerate(phases):
+        phase_id = phase.get("id") or f"phase_{idx + 1}"
+        phase_tasks = [t for t in profile.tasks if t.phase_id == phase_id]
+        done = sum(1 for t in phase_tasks if t.status in finished_status)
+        pct = int(done / len(phase_tasks) * 100) if phase_tasks else 0
+        audited = "✓ 已审计" if phase_id in profile.audited_phases else ""
+        phases_html += (
+            f'<div class="phase"><div class="phase-head"><span>{phase.get("name", phase_id)}</span>'
+            f'<span>{done}/{len(phase_tasks)}{audited}</span></div>'
+            f'<div class="bar"><div class="fill" style="width:{pct}%"></div></div>'
+            f'<p class="goal">{phase.get("goal", "")}</p></div>'
+        )
+
+    # 当前阶段任务
+    current_html = "<p>暂无任务。</p>"
+    open_tasks = [t for t in profile.tasks if t.status not in finished_status]
+    if open_tasks:
+        items = "".join(
+            f"<li>{t.name}{f' <small>({t.phase_id})</small>' if t.phase_id else ''}</li>"
+            for t in open_tasks[:8]
+        )
+        current_html = f"<ul>{items}</ul>"
+
+    # 能力证据
+    evidence = profile.have.get("capability_evidence", [])
+    evidence_items = "".join(
+        f"<li><b>{e.get('task', '')}</b>"
+        f"{f' — {e["notes"]}' if e.get('notes') else ''}</li>"
+        for e in evidence[-10:] if isinstance(e, dict)
+    ) or "<li>暂无——完成任务打卡后自动沉淀</li>"
+    evidence_html = f"<ul>{evidence_items}</ul>"
+
+    # 调整历史
+    adj_items = "".join(
+        f"<li><b>{a.timestamp[:10]}</b> {a.reason or a.trigger}</li>"
+        for a in reversed(profile.adjustments[-5:])
+    ) or "<li>暂无调整记录</li>"
+    adjustments_html = f"<ul>{adj_items}</ul>"
+
+    overall_pct = int(completed / total_tasks * 100) if total_tasks else 0
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Career Kit 进度仪表盘</title>
+<style>
+body {{ font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+       max-width: 760px; margin: 0 auto; padding: 24px; color: #222; background: #fafafa; }}
+h1 {{ font-size: 22px; }} h2 {{ font-size: 17px; border-bottom: 2px solid #4a90d9; padding-bottom: 4px; }}
+.card {{ background: #fff; border: 1px solid #e3e3e3; border-radius: 10px; padding: 16px; margin-bottom: 16px; }}
+.bar {{ background: #eee; border-radius: 6px; height: 12px; overflow: hidden; }}
+.fill {{ background: linear-gradient(90deg,#4a90d9,#67b26f); height: 100%; }}
+.phase {{ margin-bottom: 14px; }}
+.phase-head {{ display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 4px; }}
+.goal {{ color: #666; font-size: 13px; margin: 4px 0 0; }}
+small, .meta {{ color: #999; font-size: 12px; }}
+ul {{ padding-left: 20px; }} li {{ margin: 4px 0; font-size: 14px; }}
+.overall {{ display: flex; align-items: center; gap: 12px; }}
+.overall .num {{ font-size: 30px; font-weight: 700; color: #4a90d9; }}
+</style>
+</head>
+<body>
+<h1>Career Kit 进度仪表盘 <span class="meta">生成于 {datetime.now().strftime("%Y-%m-%d %H:%M")} · 快照 v{profile.version}</span></h1>
+
+<div class="card overall"><span class="num">{overall_pct}%</span>
+  <div style="flex:1"><div class="bar"><div class="fill" style="width:{overall_pct}%"></div></div>
+  <p class="goal">共 {total_tasks} 个任务 · 完成 {completed} · 跳过 {skipped} · 目标：{profile.want.get('target_role', '未设定')}</p></div>
+</div>
+
+<div class="card"><h2>阶段进度（顺序推进，节奏自定）</h2>
+{phases_html or '<p>尚未生成路线图。</p>'}</div>
+
+<div class="card"><h2>接下来做</h2>{current_html}</div>
+
+<div class="card"><h2>能力证据（来自打卡沉淀）</h2>{evidence_html}</div>
+
+<div class="card"><h2>调整历史</h2>{adjustments_html}</div>
+
+<p class="meta">顺序归产品，时间归用户 —— Career Kit 不为任务设定时限。</p>
+</body></html>"""
+
+    out_path = Path(tempfile.gettempdir()) / "career_kit_dashboard.html"
+    out_path.write_text(html, encoding="utf-8")
+
+    return (
+        f"仪表盘已生成：{out_path}\n\n"
+        "用浏览器打开即可查看。数据为生成时刻的快照，进度更新后可重新导出。\n"
+        "如需日程表，请直接在对话中为用户编写 markdown/HTML 日程文档（时间由用户自己填）。"
+    )
 
 
 def main():

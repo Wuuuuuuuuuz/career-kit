@@ -15,11 +15,11 @@
 每次改动确认成功后(未成功时不需要)都要git push，push时要明确改动内容
 
 ## 文档参考 (开发中需要主动询问用户迭代更新)
-D:\DevWorkspace\project\career-kit\dev\architecture.md 20260825 1:23
-D:\DevWorkspace\project\career-kit\dev\design.md 20260825 1:23
-D:\DevWorkspace\project\career-kit\dev\research.md 0260825 1:23
-D:\DevWorkspace\project\career-kit\dev\roadmap.md 20260825 1:23
-D:\DevWorkspace\project\career-kit\dev\todo.md 20260825 1:23
+D:\DevWorkspace\project\career-kit\docs\architecture.md
+D:\DevWorkspace\project\career-kit\docs\design.md
+D:\DevWorkspace\project\career-kit\docs\research.md
+D:\DevWorkspace\project\career-kit\docs\roadmap.md
+D:\DevWorkspace\project\career-kit\docs\todo.md
 
 ## 开源项目参考原则
 真正大幅度借鉴开源项目时，需要标注开源项目的链接和代码仓库地址。

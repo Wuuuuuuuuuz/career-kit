@@ -1,100 +1,102 @@
 {
+  "strategy_summary": "顺序归产品，时间归用户：先打基础，再做项目，最后冲刺面试；每一步的快慢由学习者自己掌握",
   "phases": [
     {
+      "type": "learn",
       "name": "基础学习",
-      "duration": "2周",
-      "description": "学习 AI Agent 开发的基础知识",
+      "goal": "掌握 AI Agent 开发的基础知识",
+      "kpi": {"metric": "完成官方教程", "target": "100%", "evidence": "能独立写出 chain"},
+      "resume_value": "",
       "milestones": [
         {
           "name": "Python 进阶",
-          "duration": "3天",
-          "description": "学习 Python 高级特性",
+          "done_criteria": "能熟练使用装饰器、生成器与异步编程",
           "tasks": [
-            {"name": "学习装饰器", "estimated_days": 1},
-            {"name": "学习生成器", "estimated_days": 1},
-            {"name": "学习异步编程", "estimated_days": 1}
+            {"name": "学习装饰器", "priority": "medium"},
+            {"name": "学习生成器", "priority": "medium"},
+            {"name": "学习异步编程", "priority": "high"}
           ]
         },
         {
           "name": "LLM 基础",
-          "duration": "4天",
-          "description": "学习大语言模型基础概念",
+          "done_criteria": "能解释 Transformer 与 Prompt Engineering 的核心概念并调通 API",
           "tasks": [
-            {"name": "了解 Transformer 架构", "estimated_days": 1},
-            {"name": "学习 Prompt Engineering", "estimated_days": 1},
-            {"name": "学习 API 调用", "estimated_days": 1},
-            {"name": "实践：调用 OpenAI API", "estimated_days": 1}
+            {"name": "了解 Transformer 架构", "priority": "high"},
+            {"name": "学习 Prompt Engineering", "priority": "high"},
+            {"name": "学习 API 调用", "priority": "high"},
+            {"name": "实践：调用 LLM API 完成一个小任务", "priority": "high"}
           ]
         },
         {
           "name": "LangChain 入门",
-          "duration": "7天",
-          "description": "学习 LangChain 框架基础",
+          "done_criteria": "不看文档写出一个带 Memory 和 Tools 的 Agent",
           "tasks": [
-            {"name": "安装和配置", "estimated_days": 1},
-            {"name": "学习 Chain", "estimated_days": 2},
-            {"name": "学习 Memory", "estimated_days": 1},
-            {"name": "学习 Tools", "estimated_days": 1},
-            {"name": "学习 Agent", "estimated_days": 2}
+            {"name": "安装和配置", "priority": "medium"},
+            {"name": "学习 Chain", "priority": "high"},
+            {"name": "学习 Memory", "priority": "medium"},
+            {"name": "学习 Tools", "priority": "high"},
+            {"name": "学习 Agent", "priority": "high"}
           ]
         }
       ]
     },
     {
+      "type": "project",
       "name": "项目实战",
-      "duration": "2周",
-      "description": "通过项目巩固知识",
+      "goal": "通过项目巩固知识，产出可写进简历的成果",
+      "kpi": {"metric": "GitHub star", "target": "50+", "evidence": "项目上线 + star 数"},
+      "resume_value": "独立开发 RAG 知识库问答系统与多工具 Agent 应用",
       "milestones": [
         {
           "name": "RAG 项目",
-          "duration": "7天",
-          "description": "构建一个 RAG 应用",
+          "done_criteria": "上传 PDF 后能准确回答相关问题",
+          "deliverable": "可运行的 RAG 应用",
           "tasks": [
-            {"name": "设计架构", "estimated_days": 1},
-            {"name": "实现文档加载", "estimated_days": 1},
-            {"name": "实现向量检索", "estimated_days": 2},
-            {"name": "实现问答链", "estimated_days": 2},
-            {"name": "测试和优化", "estimated_days": 1}
+            {"name": "设计架构", "priority": "high"},
+            {"name": "实现文档加载", "priority": "high"},
+            {"name": "实现向量检索", "priority": "high"},
+            {"name": "实现问答链", "priority": "high"},
+            {"name": "测试和优化", "priority": "medium"}
           ]
         },
         {
           "name": "Agent 项目",
-          "duration": "7天",
-          "description": "构建一个 Agent 应用",
+          "done_criteria": "Agent 能自主调用工具完成端到端任务",
+          "deliverable": "可运行的 Agent 应用",
           "tasks": [
-            {"name": "设计 Agent 架构", "estimated_days": 1},
-            {"name": "实现 Tools", "estimated_days": 2},
-            {"name": "实现 Memory", "estimated_days": 1},
-            {"name": "实现 Agent 循环", "estimated_days": 2},
-            {"name": "测试和优化", "estimated_days": 1}
+            {"name": "设计 Agent 架构", "priority": "high"},
+            {"name": "实现 Tools", "priority": "high"},
+            {"name": "实现 Memory", "priority": "medium"},
+            {"name": "实现 Agent 循环", "priority": "high"},
+            {"name": "测试和优化", "priority": "medium"}
           ]
         }
       ]
     },
     {
+      "type": "learn",
       "name": "面试准备",
-      "duration": "1周",
-      "description": "准备面试",
+      "goal": "准备好技术面试",
+      "kpi": {"metric": "模拟面试通过率", "target": "3 次连续通过", "evidence": "模拟面试记录"},
+      "resume_value": "",
       "milestones": [
         {
           "name": "简历优化",
-          "duration": "2天",
-          "description": "优化简历",
+          "done_criteria": "简历包含全部 ATS 关键词且每个项目有量化结果",
           "tasks": [
-            {"name": "整理项目经验", "estimated_days": 1},
-            {"name": "优化简历格式", "estimated_days": 1}
+            {"name": "整理项目经验（STAR 法则）", "priority": "high"},
+            {"name": "优化简历格式", "priority": "medium"}
           ]
         },
         {
           "name": "面试题准备",
-          "duration": "5天",
-          "description": "准备常见面试题",
+          "done_criteria": "中等难度算法题 30 分钟内 AC，高频八股能脱稿讲清",
           "tasks": [
-            {"name": "准备 Python 面试题", "estimated_days": 1},
-            {"name": "准备 LLM 面试题", "estimated_days": 1},
-            {"name": "准备 LangChain 面试题", "estimated_days": 1},
-            {"name": "准备项目面试题", "estimated_days": 1},
-            {"name": "模拟面试", "estimated_days": 1}
+            {"name": "准备 Python 面试题", "priority": "high"},
+            {"name": "准备 LLM 面试题", "priority": "high"},
+            {"name": "准备 LangChain 面试题", "priority": "high"},
+            {"name": "准备项目面试题", "priority": "high"},
+            {"name": "模拟面试", "priority": "high"}
           ]
         }
       ]

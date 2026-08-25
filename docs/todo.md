@@ -12,6 +12,17 @@
 
 ---
 
+## 2026-08-26 架构决策记录（审计产出，已全部落地）
+
+- **时间退场**：产品只回答「需要什么、什么顺序」，不为任务设时限；日程由 LLM 对话中一次性产出，系统不存储
+- **工具面收缩**：32 → 24 个（下线 suggest_adjustment、schedule 链路、计划管理收缩为 import_plan、get_today_tasks→get_next_tasks、新增 export_dashboard）
+- **能力证据**：建档追问证据 + 打卡沉淀 have.capability_evidence + 重建任务进度不丢
+- **阶段审计去重**：audited_phases 每阶段只审计一次；任务 schema 统一 name 制
+- **数据落位**：~/.career-kit/ 单一数据根（src/paths.py），知识库属用户自有资产
+- **反馈闭环**：暂缓，checkin notes + journey 先顶（原 3.2）
+
+---
+
 ## 工程债与近期待办（2026-08-26 梳理）
 
 | # | 待办 | 说明 | 优先级 |
@@ -186,7 +197,8 @@
 - 在 `profile.py` 中添加 `feedback` section
 - 实现反馈检索机制，影响下次分析
 
-**优先级**：P0 | **工作量**：中
+**优先级**：P0 → **已降级为 P2（2026-08-26 决策：暂缓）**。当前用 checkin notes + journey 承载结果信息，
+能力证据机制（have.capability_evidence）已部分覆盖「结果回流」诉求 | **工作量**：中
 
 ---
 

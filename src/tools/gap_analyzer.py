@@ -1,60 +1,12 @@
-"""差距分析——解析 LLM 输出并格式化报告。
+"""差距分析——格式化报告。
 
-parse_gap_analysis: 将 LLM 输出解析为结构化差距数据
-format_gap_report: 将结构化数据格式化为可读报告
+format_gap_report: 将结构化差距数据格式化为可读报告
+（解析由 server 层的 _parse_json_param 统一完成）
 """
 
 from __future__ import annotations
 
-import json
 from typing import Any
-
-
-def parse_gap_analysis(llm_response: str) -> dict[str, Any]:
-    """解析 LLM 输出为结构化差距数据。
-
-    Args:
-        llm_response: LLM 的原始输出
-
-    Returns:
-        结构化的差距分析 dict
-    """
-    json_str = llm_response
-
-    # 从 markdown code block 中提取
-    if "```json" in llm_response:
-        start = llm_response.index("```json") + 7
-        end = llm_response.index("```", start)
-        json_str = llm_response[start:end].strip()
-    elif "```" in llm_response:
-        start = llm_response.index("```") + 3
-        end = llm_response.index("```", start)
-        json_str = llm_response[start:end].strip()
-
-    try:
-        result = json.loads(json_str)
-    except json.JSONDecodeError:
-        return {
-            "raw_analysis": llm_response,
-            "skill_gaps": [],
-            "experience_gaps": [],
-            "strengths": [],
-            "match_score": 0,
-            "priority_actions": [],
-            "market_context": "（解析失败，请查看 raw_analysis）",
-        }
-
-    # 确保必要字段存在
-    result.setdefault("skill_gaps", [])
-    result.setdefault("experience_gaps", [])
-    result.setdefault("strengths", [])
-    result.setdefault("match_score", 0)
-    result.setdefault("priority_actions", [])
-    result.setdefault("market_context", "")
-    result.setdefault("resume_optimization", {})
-    result.setdefault("interview_preparation", {})
-
-    return result
 
 
 def format_gap_report(gap: dict[str, Any]) -> str:

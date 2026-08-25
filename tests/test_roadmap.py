@@ -34,7 +34,7 @@ def test_sop_config():
 
 
 def test_parse_roadmap():
-    """测试路线图解析。"""
+    """测试路线图解析：name 制任务 schema，无时长字段，阶段 id 规范化。"""
     print("=" * 60)
     print("测试 2: 解析路线图 JSON")
     print("=" * 60)
@@ -64,8 +64,8 @@ def test_parse_roadmap():
                             "name": "LangChain 基础",
                             "duration": "第1-2周",
                             "tasks": [
-                                {"task": "看官方文档", "time": "3天", "priority": "high"},
-                                {"task": "跑通 quickstart", "time": "2天", "priority": "high"}
+                                {"name": "看官方文档", "priority": "high"},
+                                {"name": "跑通 quickstart", "priority": "high"}
                             ],
                             "deliverable": "能独立写简单 Agent",
                             "done_criteria": "不看文档写出来"
@@ -73,10 +73,8 @@ def test_parse_roadmap():
                     ]
                 },
                 {
-                    "id": "phase_2",
                     "type": "project",
                     "name": "RAG 项目实战",
-                    "duration": "第5-8周",
                     "goal": "做一个可展示的 RAG 项目",
                     "kpi": {
                         "metric": "GitHub star",
@@ -86,12 +84,10 @@ def test_parse_roadmap():
                     "resume_value": "独立开发 RAG 系统，支持 10 种文档格式，GitHub 50+ star",
                     "milestones": [
                         {
-                            "id": "m1",
                             "name": "MVP 开发",
-                            "duration": "第5-6周",
                             "tasks": [
-                                {"task": "设计架构", "time": "2天", "priority": "high"},
-                                {"task": "实现核心功能", "time": "5天", "priority": "high"}
+                                {"name": "设计架构", "description": "确定技术栈与数据流", "priority": "high"},
+                                {"name": "实现核心功能", "priority": "high"}
                             ],
                             "deliverable": "可运行的 MVP",
                             "done_criteria": "能处理 PDF 文档"
@@ -106,13 +102,27 @@ def test_parse_roadmap():
 
     result = parse_roadmap(llm_response)
     roadmap = result["roadmap"]
-    assert roadmap["total_duration"] == "3个月"
+
+    # 产品不规划时间：时长字段被剥离
+    assert "total_duration" not in roadmap
     assert len(roadmap["phases"]) == 2
+
+    # 阶段 id 由解析器规范化（即使 LLM 没给）
+    assert roadmap["phases"][0]["id"] == "phase_1"
+    assert roadmap["phases"][1]["id"] == "phase_2"
+
+    # 任务 schema 统一为 {name, description, priority}
+    for phase in roadmap["phases"]:
+        for ms in phase["milestones"]:
+            for t in ms["tasks"]:
+                assert t.get("name"), f"任务缺少 name: {t}"
+                assert "task" not in t or t["name"], "旧 task 字段不应被依赖"
+
     assert roadmap["phases"][0]["type"] == "learn"
     assert roadmap["phases"][1]["type"] == "project"
     assert roadmap["phases"][1]["resume_value"] != ""
     assert roadmap["phases"][0]["kpi"]["target"] == "100道"
-    print("[OK] 标准路线图解析成功")
+    print("[OK] 标准路线图解析成功（无时长字段，id 规范化，name 制 schema）")
 
     # 测试解析失败
     result2 = parse_roadmap("这不是 JSON")
@@ -123,21 +133,19 @@ def test_parse_roadmap():
 
 
 def test_format_roadmap():
-    """测试路线图格式化。"""
+    """测试路线图格式化（无时长字段版本）。"""
     print("=" * 60)
     print("测试 3: 格式化路线图")
     print("=" * 60)
 
     roadmap_data = {
         "roadmap": {
-            "total_duration": "3个月",
             "strategy_summary": "先补基础再做项目",
             "phases": [
                 {
                     "id": "phase_1",
                     "type": "learn",
                     "name": "基础补齐",
-                    "duration": "第1-4周",
                     "goal": "掌握核心技能",
                     "kpi": {
                         "metric": "LeetCode 刷题",
@@ -149,10 +157,9 @@ def test_format_roadmap():
                         {
                             "id": "m1",
                             "name": "LangChain 基础",
-                            "duration": "第1-2周",
                             "tasks": [
-                                {"task": "看官方文档", "time": "3天", "priority": "high"},
-                                {"task": "跑通 quickstart", "time": "2天", "priority": "medium"},
+                                {"name": "看官方文档", "priority": "high"},
+                                {"name": "跑通 quickstart", "priority": "medium"},
                             ],
                             "deliverable": "能写简单 Agent",
                             "done_criteria": "不看文档写出来",
@@ -163,7 +170,6 @@ def test_format_roadmap():
                     "id": "phase_2",
                     "type": "project",
                     "name": "项目实战",
-                    "duration": "第5-8周",
                     "goal": "做出可展示的项目",
                     "kpi": {
                         "metric": "GitHub star",
@@ -175,9 +181,8 @@ def test_format_roadmap():
                         {
                             "id": "m1",
                             "name": "MVP",
-                            "duration": "第5-6周",
                             "tasks": [
-                                {"task": "设计架构", "time": "2天", "priority": "high"},
+                                {"name": "设计架构", "priority": "high"},
                             ],
                             "deliverable": "可运行 MVP",
                             "done_criteria": "能处理 PDF",
@@ -190,7 +195,6 @@ def test_format_roadmap():
 
     report = format_roadmap(roadmap_data)
 
-    assert "3个月" in report
     assert "基础补齐" in report
     assert "learn" in report
     assert "project" in report

@@ -15,8 +15,8 @@ from mcp.client.stdio import stdio_client
 PYTHON_EXE = r"C:\Users\16070\AppData\Local\Programs\Python\Python312\python.exe"
 
 
-async def test_mcp_server():
-    """连接 MCP 服务器并测试所有工具。"""
+async def _run_mcp_server():
+    """连接 MCP 服务器并测试所有工具（异步主体）。"""
     print("=" * 60)
     print("MCP 客户端测试")
     print("=" * 60)
@@ -97,5 +97,10 @@ async def test_mcp_server():
     print("=" * 60)
 
 
+def test_mcp_server():
+    """同步入口：pytest 无需 asyncio 插件即可运行。"""
+    assert asyncio.run(_run_mcp_server()) is None
+
+
 if __name__ == "__main__":
-    asyncio.run(test_mcp_server())
+    asyncio.run(_run_mcp_server())

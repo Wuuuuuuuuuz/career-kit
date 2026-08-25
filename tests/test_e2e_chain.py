@@ -1,7 +1,8 @@
-"""全链路贯通测试——建档 → 差距分析 → 路线图 → 日程 → 进度追踪。
+"""全链路贯通测试——建档 → 差距分析 → 路线图 → 任务执行 → 打卡。
 
 模拟完整用户旅程，验证各工具之间的数据流和状态衔接。
 不调用真实 LLM，用模拟响应测试解析和存储链路。
+核心理念：顺序归产品，时间归用户——全链路不含任何时长字段。
 """
 
 from __future__ import annotations
@@ -16,22 +17,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.stdout.reconfigure(encoding="utf-8")
 
 import src.tools.profile as profile_module
-from src.models import CareerProfile
-from src.tools.gap_analyzer import format_gap_report, parse_gap_analysis
+from src.models import CheckIn, CareerProfile
+from src.tools.gap_analyzer import format_gap_report
 from src.tools.methodology import build_methodology_context
 from src.tools.roadmap import format_roadmap, parse_roadmap
-from src.tools.schedule import (
-    format_schedule,
-    generate_ics,
-    parse_schedule,
-)
 from src.tools.task_manager import (
     checkin_task as do_checkin,
+    collect_completed_evidence,
     create_tasks_from_roadmap,
+    current_phase_view,
     format_progress_overview,
-    set_deadlines,
+    next_task_id,
 )
-from src.models import CheckIn
 
 
 # === 模拟 LLM 响应 ===
@@ -78,16 +75,15 @@ MOCK_GAP_ANALYSIS = {
     "market_context": "AI Agent 岗位需求增长 150%",
 }
 
+# 任务 schema 为 name/description/priority；无任何时长字段（与 sop/roadmap.yaml 一致）
 MOCK_ROADMAP = {
     "roadmap": {
-        "total_duration": "2个月",
         "strategy_summary": "先补 LangChain 基础，再做 RAG 项目，最后冲刺面试",
         "phases": [
             {
                 "id": "phase_1",
                 "type": "learn",
                 "name": "LangChain 基础",
-                "duration": "第1-3周",
                 "goal": "掌握 LangChain 核心概念和基本用法",
                 "kpi": {"metric": "完成官方教程", "target": "100%", "evidence": "能独立写 chain"},
                 "resume_value": "",
@@ -95,11 +91,10 @@ MOCK_ROADMAP = {
                     {
                         "id": "m1",
                         "name": "LangChain 入门",
-                        "duration": "第1-2周",
                         "tasks": [
-                            {"task": "看官方文档 Getting Started", "time": "3天", "priority": "high"},
-                            {"task": "跑通 quickstart 示例", "time": "1天", "priority": "high"},
-                            {"task": "学习 Chain/Agent/Tool 概念", "time": "3天", "priority": "medium"},
+                            {"name": "看官方文档 Getting Started", "priority": "high"},
+                            {"name": "跑通 quickstart 示例", "priority": "high"},
+                            {"name": "学习 Chain/Agent/Tool 概念", "priority": "medium"},
                         ],
                         "deliverable": "能写简单的 chain 和 agent",
                         "done_criteria": "不看文档写出一个 QA chain",
@@ -107,10 +102,9 @@ MOCK_ROADMAP = {
                     {
                         "id": "m2",
                         "name": "RAG 基础",
-                        "duration": "第3周",
                         "tasks": [
-                            {"task": "学习向量数据库（Chroma）", "time": "2天", "priority": "high"},
-                            {"task": "实现简单的文档问答", "time": "3天", "priority": "high"},
+                            {"name": "学习向量数据库（Chroma）", "priority": "high"},
+                            {"name": "实现简单的文档问答", "priority": "high"},
                         ],
                         "deliverable": "能对 PDF 做问答",
                         "done_criteria": "上传 PDF 后能回答相关问题",
@@ -121,7 +115,6 @@ MOCK_ROADMAP = {
                 "id": "phase_2",
                 "type": "project",
                 "name": "RAG 项目实战",
-                "duration": "第4-6周",
                 "goal": "做一个可展示的 RAG 项目",
                 "kpi": {"metric": "GitHub star", "target": "50+", "evidence": "项目上线 + star 数"},
                 "resume_value": "独立开发 RAG 知识库系统，GitHub 50+ star，支持 PDF/网页/Markdown 多格式文档问答",
@@ -129,151 +122,18 @@ MOCK_ROADMAP = {
                     {
                         "id": "m3",
                         "name": "MVP 开发",
-                        "duration": "第4-5周",
                         "tasks": [
-                            {"task": "设计项目架构", "time": "2天", "priority": "high"},
-                            {"task": "实现核心 RAG pipeline", "time": "5天", "priority": "high"},
-                            {"task": "前端界面开发", "time": "3天", "priority": "medium"},
+                            {"name": "设计项目架构", "priority": "high"},
+                            {"name": "实现核心 RAG pipeline", "priority": "high"},
+                            {"name": "前端界面开发", "priority": "medium"},
                         ],
                         "deliverable": "可运行的 MVP",
                         "done_criteria": "能处理 PDF 并回答问题",
                     },
-                    {
-                        "id": "m4",
-                        "name": "优化上线",
-                        "duration": "第6周",
-                        "tasks": [
-                            {"task": "性能优化（检索精度）", "time": "3天", "priority": "high"},
-                            {"task": "部署上线 + README", "time": "2天", "priority": "high"},
-                        ],
-                        "deliverable": "线上可访问的项目",
-                        "done_criteria": "有完整文档和 demo",
-                    },
-                ],
-            },
-            {
-                "id": "phase_3",
-                "type": "learn",
-                "name": "面试冲刺",
-                "duration": "第7-8周",
-                "goal": "刷题 + 模拟面试",
-                "kpi": {"metric": "LeetCode 刷题", "target": "50道", "evidence": "提交记录"},
-                "resume_value": "",
-                "milestones": [
-                    {
-                        "id": "m5",
-                        "name": "算法刷题",
-                        "duration": "第7-8周",
-                        "tasks": [
-                            {"task": "每天刷 2-3 道 LeetCode", "time": "每天2小时", "priority": "high"},
-                            {"task": "整理高频面试题", "time": "3天", "priority": "medium"},
-                        ],
-                        "deliverable": "50 道 LeetCode",
-                        "done_criteria": "中等难度能在30分钟内AC",
-                    },
                 ],
             },
         ],
     }
-}
-
-MOCK_SCHEDULE = {
-    "schedule": {
-        "total_days": 5,
-        "daily_plans": [
-            {
-                "day": 1,
-                "date": "Day 1",
-                "theme": "LangChain 入门",
-                "blocks": [
-                    {"time": "09:00-11:00", "task": "看 LangChain 官方文档 Getting Started", "type": "learn", "priority": "high"},
-                    {"time": "11:15-12:15", "task": "跑通 quickstart 示例", "type": "practice", "priority": "high"},
-                    {"time": "14:00-15:30", "task": "阅读 Chain 源码", "type": "learn", "priority": "medium"},
-                ],
-                "total_hours": 4.5,
-                "notes": "重点理解 Chain 的概念",
-            },
-            {
-                "day": 2,
-                "date": "Day 2",
-                "theme": "Agent 与 Tool",
-                "blocks": [
-                    {"time": "09:00-11:00", "task": "学习 Agent 概念", "type": "learn", "priority": "high"},
-                    {"time": "11:15-12:15", "task": "实现一个自定义 Tool", "type": "practice", "priority": "high"},
-                    {"time": "14:00-16:00", "task": "完成 Agent + Tool 联动示例", "type": "practice", "priority": "medium"},
-                ],
-                "total_hours": 5,
-            },
-            {
-                "day": 3,
-                "date": "Day 3",
-                "theme": "向量数据库",
-                "blocks": [
-                    {"time": "09:00-10:30", "task": "学习 Chroma 基础", "type": "learn", "priority": "high"},
-                    {"time": "10:45-12:00", "task": "实现文档 embedding + 检索", "type": "practice", "priority": "high"},
-                ],
-                "total_hours": 3,
-            },
-            {
-                "day": 4,
-                "date": "Day 4",
-                "theme": "复习日",
-                "blocks": [
-                    {"time": "09:00-10:30", "task": "回顾 Day 1-3 内容", "type": "review", "priority": "medium"},
-                    {"time": "10:45-12:00", "task": "整理笔记，查漏补缺", "type": "review", "priority": "medium"},
-                ],
-                "total_hours": 3,
-                "notes": "间隔复习，巩固记忆",
-            },
-            {
-                "day": 5,
-                "date": "Day 5",
-                "theme": "RAG 实战",
-                "blocks": [
-                    {"time": "09:00-12:00", "task": "实现简单的 PDF 问答系统", "type": "project", "priority": "high"},
-                    {"time": "14:00-16:00", "task": "测试不同文档格式", "type": "practice", "priority": "medium"},
-                ],
-                "total_hours": 5,
-            },
-        ],
-    }
-}
-
-MOCK_CHECKIN_1 = {
-    "completed_tasks": ["看 LangChain 官方文档", "跑通 quickstart", "阅读 Chain 源码"],
-    "progress_pct": 15,
-    "time_spent": "4.5小时",
-    "blockers": [],
-    "morale": "high",
-    "deviation": {"on_track": True, "days_ahead_or_behind": 0, "reason": "进度正常"},
-    "next_steps": ["继续学习 Agent 概念"],
-    "adjustments": {"needed": False},
-}
-
-MOCK_CHECKIN_2 = {
-    "completed_tasks": ["学习 Agent 概念", "实现自定义 Tool", "Agent + Tool 联动"],
-    "progress_pct": 30,
-    "time_spent": "5小时",
-    "blockers": ["Tool 调用偶尔超时"],
-    "morale": "neutral",
-    "deviation": {"on_track": True, "days_ahead_or_behind": 0, "reason": "按计划推进"},
-    "next_steps": ["学习向量数据库"],
-    "adjustments": {"needed": False},
-}
-
-MOCK_CHECKIN_3_LAGGING = {
-    "completed_tasks": ["学习 Chroma 基础"],
-    "progress_pct": 35,
-    "time_spent": "1.5小时",
-    "blockers": ["embedding 模型加载失败", "网络问题导致下载超时"],
-    "morale": "low",
-    "deviation": {"on_track": False, "days_ahead_or_behind": -1, "reason": "环境问题导致落后一天"},
-    "next_steps": ["解决环境问题", "补上落后的进度"],
-    "adjustments": {
-        "needed": True,
-        "reason": "环境问题导致落后",
-        "suggested_changes": ["将 Day 4 复习日改为补进度日", "压缩 Day 5 内容"],
-    },
 }
 
 
@@ -294,6 +154,13 @@ def _setup_temp_profile():
 def _restore_profile_dir(original_dir):
     """恢复原始 profile 目录。"""
     profile_module.PROFILE_DIR = original_dir
+
+
+def _build_profile(name: str) -> None:
+    """建档：who/have/want。"""
+    profile_module.merge_section("who", '{"name":"测试","status":"在职"}', name)
+    profile_module.merge_section("have", '{"skills":["Python"],"status":"在职"}', name)
+    profile_module.merge_section("want", '{"target_role":"AI Agent 工程师"}', name)
 
 
 # === 测试函数 ===
@@ -317,31 +184,31 @@ def test_step1_build_profile():
         assert p.who["name"] == "测试用户"
         print(f"[OK] who 填充完成: {p.who['name']}")
 
-        # 填充 have
+        # 填充 have（技能带证据——建档摸排原则）
         p = profile_module.merge_section("have", json.dumps({
-            "skills": ["Python", "Django", "FastAPI", "PostgreSQL", "Docker"],
+            "skills": ["Python", "Django", "FastAPI"],
+            "skill_evidence": [{"skill": "FastAPI", "evidence": "电商后端 API", "confidence": "high"}],
             "experience": "2年后端开发",
-            "projects": ["电商后端 API", "数据采集平台"],
             "status": "在职",
         }, ensure_ascii=False), name)
         assert "Python" in p.have["skills"]
-        print(f"[OK] have 填充完成: {len(p.have['skills'])} 项技能")
+        assert p.have["skill_evidence"][0]["confidence"] == "high"
+        print(f"[OK] have 填充完成: {len(p.have['skills'])} 项技能（含证据）")
 
         # 填充 want
         p = profile_module.merge_section("want", json.dumps({
             "target_role": "AI Agent 开发工程师",
-            "target_companies": ["字节跳动", "阿里巴巴", "蚂蚁集团"],
-            "timeline": "3个月",
+            "target_companies": ["字节跳动", "阿里巴巴"],
             "salary_expectation": "25-35k",
         }, ensure_ascii=False), name)
         assert p.want["target_role"] == "AI Agent 开发工程师"
         print(f"[OK] want 填充完成: 目标 {p.want['target_role']}")
 
-        # 验证档案完整性
+        # 验证档案完整性 + section 时间戳（目标变更检测的依据）
         p = profile_module.load_profile(name)
         assert p.who and p.have and p.want
-        assert p.version == 3
-        print(f"[OK] 档案完整，版本 v{p.version}")
+        assert set(p.section_updated_at.keys()) >= {"who", "have", "want"}
+        print(f"[OK] 档案完整，版本 v{p.version}，section 时间戳已记录")
 
         print()
         return True
@@ -350,7 +217,7 @@ def test_step1_build_profile():
 
 
 def test_step2_gap_analysis():
-    """步骤2: 差距分析——构建 prompt + 解析模拟 LLM 响应。"""
+    """步骤2: 差距分析——方法论上下文 + 解析保存。"""
     print("=" * 60)
     print("步骤 2: 差距分析")
     print("=" * 60)
@@ -358,36 +225,28 @@ def test_step2_gap_analysis():
     tmpdir, original_dir, name = _setup_temp_profile()
 
     try:
-        # 先建档
-        profile_module.merge_section("who", '{"name":"测试","status":"在职","education":"本科"}', name)
-        profile_module.merge_section("have", '{"skills":["Python","Django"],"status":"在职"}', name)
-        profile_module.merge_section("want", '{"target_role":"AI Agent 工程师","timeline":"3个月"}', name)
-
+        _build_profile(name)
         profile = profile_module.load_profile(name)
 
         # 构建分析上下文（方法论）
         ctx = build_methodology_context("resume_screening", profile)
         assert ctx["methodology"]
-        print(f"[OK] 差距分析方法论上下文构建成功")
+        print("[OK] 差距分析方法论上下文构建成功")
 
-        # 模拟 LLM 响应解析
-        mock_response = f"```json\n{json.dumps(MOCK_GAP_ANALYSIS, ensure_ascii=False)}\n```"
-        parsed = parse_gap_analysis(mock_response)
-        assert parsed["match_score"] == 55
-        assert len(parsed["strengths"]) > 0
-        print(f"[OK] 差距分析解析成功: 匹配度 {parsed['match_score']}")
+        # 模拟 LLM 已产出结构化结果（解析由 server 层统一 JSON 处理）
+        parsed = copy.deepcopy(MOCK_GAP_ANALYSIS)
 
         # 保存差距分析
         profile.gap = parsed
         profile.touch()
         profile_module.save_profile(profile, name)
-        print(f"[OK] 差距分析已保存到档案")
+        print("[OK] 差距分析已保存到档案")
 
         # 格式化报告
         report = format_gap_report(parsed)
         assert "55" in report
         assert "LangChain" in report
-        print(f"[OK] 差距报告格式化成功")
+        print("[OK] 差距报告格式化成功")
 
         print()
         return True
@@ -396,7 +255,7 @@ def test_step2_gap_analysis():
 
 
 def test_step3_roadmap():
-    """步骤3: 路线图生成——基于差距分析生成分阶段计划。"""
+    """步骤3: 路线图生成——分阶段计划，无时长字段，任务 schema 统一。"""
     print("=" * 60)
     print("步骤 3: 路线图生成")
     print("=" * 60)
@@ -404,11 +263,7 @@ def test_step3_roadmap():
     tmpdir, original_dir, name = _setup_temp_profile()
 
     try:
-        # 建档 + 差距分析
-        profile_module.merge_section("who", '{"name":"测试","status":"在职"}', name)
-        profile_module.merge_section("have", '{"skills":["Python"],"status":"在职"}', name)
-        profile_module.merge_section("want", '{"target_role":"AI Agent 工程师"}', name)
-
+        _build_profile(name)
         profile = profile_module.load_profile(name)
         profile.gap = copy.deepcopy(MOCK_GAP_ANALYSIS)
         profile.touch()
@@ -417,45 +272,45 @@ def test_step3_roadmap():
         # 构建路线图方法论上下文
         ctx = build_methodology_context("roadmap", profile)
         assert ctx["methodology"]
-        print(f"[OK] 路线图方法论上下文构建成功")
+        print("[OK] 路线图方法论上下文构建成功")
 
-        # 解析模拟 LLM 响应
+        # 解析模拟 LLM 响应（LLM 可能带 code block 包裹）
         mock_response = f"```json\n{json.dumps(MOCK_ROADMAP, ensure_ascii=False)}\n```"
         parsed = parse_roadmap(mock_response)
         roadmap = parsed["roadmap"]
-        assert roadmap["total_duration"] == "2个月"
-        assert len(roadmap["phases"]) == 3
-        print(f"[OK] 路线图解析成功: {len(roadmap['phases'])} 个阶段")
+        assert len(roadmap["phases"]) == 2
+        assert "total_duration" not in roadmap
+        print(f"[OK] 路线图解析成功: {len(roadmap['phases'])} 个阶段，无时长字段")
 
-        # 验证阶段类型
-        phase_types = [p["type"] for p in roadmap["phases"]]
-        assert "learn" in phase_types
-        assert "project" in phase_types
-        print(f"[OK] 阶段类型: {phase_types}")
+        # 验证阶段 id 规范化（任务与阶段审计的唯一关联键）
+        ids = [p["id"] for p in roadmap["phases"]]
+        assert ids == ["phase_1", "phase_2"]
+        print(f"[OK] 阶段 id 已规范化: {ids}")
 
-        # 验证 KPI
+        # 验证任务 schema（name 制）
         for phase in roadmap["phases"]:
-            assert "kpi" in phase
-            assert phase["kpi"]["target"]
-        print(f"[OK] 每个阶段都有量化 KPI")
+            for ms in phase["milestones"]:
+                for t in ms["tasks"]:
+                    assert t.get("name"), "任务必须有 name 字段"
+        print("[OK] 任务 schema 统一为 {name, description, priority}")
 
         # 验证简历价值
         project_phases = [p for p in roadmap["phases"] if p["type"] != "learn"]
         for p in project_phases:
             assert p.get("resume_value"), f"阶段 {p['name']} 缺少简历价值"
-        print(f"[OK] 非学习阶段都有简历价值")
+        print("[OK] 非学习阶段都有简历价值")
 
         # 保存路线图
         profile.plan = parsed
         profile.touch()
         profile_module.save_profile(profile, name)
-        print(f"[OK] 路线图已保存到 plan")
+        print("[OK] 路线图已保存到 plan")
 
         # 格式化报告
         report = format_roadmap(parsed)
         assert "LangChain" in report
         assert "RAG" in report
-        print(f"[OK] 路线图报告格式化成功")
+        print("[OK] 路线图报告格式化成功")
 
         print()
         return True
@@ -463,122 +318,168 @@ def test_step3_roadmap():
         _restore_profile_dir(original_dir)
 
 
-def test_step4_schedule():
-    """步骤4: 日程生成——将路线图拆解为每日时间块。"""
+def test_step4_progress_tracking():
+    """步骤4: 进度追踪——任务生成 + 打卡 + 能力证据沉淀。"""
     print("=" * 60)
-    print("步骤 4: 日程生成")
-    print("=" * 60)
-
-    tmpdir, original_dir, name = _setup_temp_profile()
-
-    try:
-        # 建档 + 差距分析 + 路线图
-        profile_module.merge_section("who", '{"name":"测试","status":"在职"}', name)
-        profile_module.merge_section("have", '{"skills":["Python"],"status":"在职"}', name)
-        profile_module.merge_section("want", '{"target_role":"AI Agent 工程师"}', name)
-
-        profile = profile_module.load_profile(name)
-        profile.gap = copy.deepcopy(MOCK_GAP_ANALYSIS)
-        profile.plan = copy.deepcopy(MOCK_ROADMAP)
-        profile.touch()
-        profile_module.save_profile(profile, name)
-
-        # 构建日程方法论上下文
-        ctx = build_methodology_context("schedule", profile)
-        assert ctx["methodology"]
-        print(f"[OK] 日程方法论上下文构建成功")
-
-        # 解析模拟 LLM 响应
-        mock_response = f"```json\n{json.dumps(MOCK_SCHEDULE, ensure_ascii=False)}\n```"
-        parsed = parse_schedule(mock_response)
-        schedule = parsed["schedule"]
-        assert schedule["total_days"] == 5
-        assert len(schedule["daily_plans"]) == 5
-        print(f"[OK] 日程解析成功: {schedule['total_days']} 天")
-
-        # 验证时间块
-        total_blocks = sum(len(d["blocks"]) for d in schedule["daily_plans"])
-        assert total_blocks > 0
-        print(f"[OK] 共 {total_blocks} 个时间块")
-
-        # 验证复习日
-        review_days = [d for d in schedule["daily_plans"] if any(b["type"] == "review" for b in d["blocks"])]
-        assert len(review_days) > 0
-        print(f"[OK] 包含 {len(review_days)} 个复习日")
-
-        # 保存日程
-        profile.plan["schedule"] = schedule
-        profile.touch()
-        profile_module.save_profile(profile, name)
-        print(f"[OK] 日程已保存到 plan")
-
-        # 格式化报告
-        report = format_schedule(parsed)
-        assert "LangChain" in report
-        assert "复习" in report
-        print(f"[OK] 日程报告格式化成功")
-
-        # 生成 ICS
-        ics = generate_ics(parsed, "2026-08-25")
-        assert "BEGIN:VCALENDAR" in ics
-        assert "END:VCALENDAR" in ics
-        assert "20260825" in ics
-        print(f"[OK] ICS 日历文件生成成功")
-
-        print()
-        return True
-    finally:
-        _restore_profile_dir(original_dir)
-
-
-def test_step5_progress_tracking():
-    """步骤5: 进度追踪——任务生成 + 打卡 + 进度概览（任务级系统）。"""
-    print("=" * 60)
-    print("步骤 5: 进度追踪")
+    print("步骤 4: 进度追踪")
     print("=" * 60)
 
     tmpdir, original_dir, name = _setup_temp_profile()
 
     try:
-        # 建档 + 路线图
-        profile_module.merge_section("who", '{"name":"测试","status":"在职"}', name)
+        _build_profile(name)
         profile = profile_module.load_profile(name)
-        profile.plan = copy.deepcopy(MOCK_ROADMAP)
+        profile.plan = parse_roadmap(json.dumps(MOCK_ROADMAP, ensure_ascii=False))
         profile.touch()
         profile_module.save_profile(profile, name)
         profile = profile_module.load_profile(name)
 
-        # 从路线图生成任务
+        # 从路线图生成任务（无 deadline/estimated_days 概念）
         tasks = create_tasks_from_roadmap(profile)
         assert len(tasks) > 0, "应从路线图生成任务"
-        tasks = set_deadlines(tasks)
+        assert all(t.phase_id in ("phase_1", "phase_2") for t in tasks)
         for t in tasks:
             profile.add_task(t)
         profile_module.save_profile(profile, name)
-        print(f"[OK] 生成 {len(tasks)} 个任务")
+        print(f"[OK] 生成 {len(tasks)} 个任务（阶段 id 与路线图一致）")
 
-        # 打卡第一个任务
+        # 打卡第一个任务 → 能力证据沉淀
         first_task_id = tasks[0].id
-        checkin = CheckIn(task_id=first_task_id, status="completed", notes="测试打卡")
         profile, saved_checkin = do_checkin(
             profile_module.load_profile(name), first_task_id, "completed", "测试打卡"
         )
+        task = profile.get_task(first_task_id)
+        from src.tools.task_manager import record_capability_evidence
+        record_capability_evidence(profile, task, "测试打卡")
         assert len(profile.checkins) == 1
+        evidence = profile.have["capability_evidence"]
+        assert len(evidence) == 1 and evidence[0]["task"] == task.name
         completed = [t for t in profile.tasks if t.status == "completed"]
         assert len(completed) == 1
-        print(f"[OK] 任务 {first_task_id} 打卡成功")
+        print(f"[OK] 任务 {first_task_id} 打卡成功，能力证据已沉淀")
+
+        # 当前阶段视图
+        view = current_phase_view(profile)
+        assert view is not None and view["phase_id"] == "phase_1"
+        assert view["total"] > 0 and view["next_tasks"]
+        print(f"[OK] 当前阶段视图: {view['phase_name']} ({view['done']}/{view['total']})")
 
         # 进度概览
         overview = format_progress_overview(profile)
         assert "任务" in overview
-        print(f"[OK] 进度概览格式化成功")
+        print("[OK] 进度概览格式化成功")
+
+        # ID 递增无冲突
+        new_id = next_task_id(profile)
+        assert all(new_id != t.id for t in profile.tasks)
+        print(f"[OK] 任务 ID 递增无冲突: {new_id}")
 
         # 持久化后重新加载验证
         profile_module.save_profile(profile, name)
         final = profile_module.load_profile(name)
         assert len(final.checkins) == 1
         assert len(final.tasks) == len(tasks)
-        print(f"[OK] 打卡数据持久化验证通过")
+        assert len(final.have["capability_evidence"]) == 1
+        print("[OK] 打卡与能力证据持久化验证通过")
+
+        print()
+        return True
+    finally:
+        _restore_profile_dir(original_dir)
+
+
+def test_step5_stage_audit_dedup():
+    """步骤5: 阶段审计——完成后触发一次，不重复触发。"""
+    print("=" * 60)
+    print("步骤 5: 阶段审计去重")
+    print("=" * 60)
+
+    tmpdir, original_dir, name = _setup_temp_profile()
+
+    try:
+        _build_profile(name)
+        profile = profile_module.load_profile(name)
+        profile.plan = parse_roadmap(json.dumps(MOCK_ROADMAP, ensure_ascii=False))
+        profile.touch()
+        profile_module.save_profile(profile, name)
+        profile = profile_module.load_profile(name)
+
+        tasks = create_tasks_from_roadmap(profile)
+        for t in tasks:
+            profile.add_task(t)
+
+        from src.tools.insight import completed_phase_ids
+
+        # 全部完成前：无已完成阶段
+        assert completed_phase_ids(profile) == []
+
+        # 完成 phase_1 全部任务
+        for t in [x for x in profile.tasks if x.phase_id == "phase_1"]:
+            do_checkin(profile, t.id, "completed")
+        assert completed_phase_ids(profile) == ["phase_1"]
+
+        # 模拟首次审计登记
+        newly = [pid for pid in completed_phase_ids(profile) if pid not in profile.audited_phases]
+        profile.audited_phases.extend(newly)
+        assert newly == ["phase_1"]
+
+        # 再次检测：不再重复触发
+        again = [pid for pid in completed_phase_ids(profile) if pid not in profile.audited_phases]
+        assert again == []
+        print("[OK] 阶段审计只触发一次，audited_phases 去重生效")
+
+        print()
+        return True
+    finally:
+        _restore_profile_dir(original_dir)
+
+
+def test_step6_rebuild_preserves_progress():
+    """步骤6: 重建任务——历史进度沉淀为能力证据，不丢失。"""
+    print("=" * 60)
+    print("步骤 6: 重建任务保留进度")
+    print("=" * 60)
+
+    tmpdir, original_dir, name = _setup_temp_profile()
+
+    try:
+        _build_profile(name)
+        profile = profile_module.load_profile(name)
+        profile.plan = parse_roadmap(json.dumps(MOCK_ROADMAP, ensure_ascii=False))
+        profile.touch()
+        profile_module.save_profile(profile, name)
+        profile = profile_module.load_profile(name)
+
+        tasks = create_tasks_from_roadmap(profile)
+        for t in tasks:
+            profile.add_task(t)
+        do_checkin(profile, tasks[0].id, "completed", "已看完文档")
+        profile_module.save_profile(profile, name)
+        profile = profile_module.load_profile(name)
+
+        # 重建前收集证据
+        evidence = collect_completed_evidence(profile)
+        assert len(evidence) == 1
+        assert evidence[0]["notes"] == "已看完文档"
+
+        # 模拟 generate_tasks 的重建逻辑
+        have_evidence = profile.have.setdefault("capability_evidence", [])
+        have_evidence.extend(evidence)
+        profile.tasks = []
+        new_tasks = create_tasks_from_roadmap(profile)
+        for t in new_tasks:
+            profile.add_task(t)
+        save_ok = len(new_tasks) == len(tasks)
+
+        profile_module.save_profile(profile, name)
+        final = profile_module.load_profile(name)
+
+        assert save_ok
+        assert len(final.tasks) == len(tasks)
+        assert len(final.checkins) == 1  # 打卡历史仍在
+        capability = final.have["capability_evidence"]
+        assert any(e.get("task") == tasks[0].name for e in capability if isinstance(e, dict))
+        print("[OK] 重建后任务数量一致，历史进度已沉淀为能力证据")
 
         print()
         return True
@@ -602,21 +503,16 @@ def test_step7_data_continuity():
 
         profile = profile_module.load_profile(name)
 
-        # 写入差距分析
+        # 写入差距分析 + 路线图
         profile.gap = copy.deepcopy(MOCK_GAP_ANALYSIS)
-        profile.touch()
-        profile_module.save_profile(profile, name)
-
-        # 写入路线图 + 日程
-        profile.plan = copy.deepcopy(MOCK_ROADMAP)
-        profile.plan["schedule"] = copy.deepcopy(MOCK_SCHEDULE["schedule"])
+        profile.plan = parse_roadmap(json.dumps(MOCK_ROADMAP, ensure_ascii=False))
+        profile.plan_saved_at = "2026-08-26T10:00:00"
         profile.touch()
         profile_module.save_profile(profile, name)
 
         # 生成任务并打卡
         profile = profile_module.load_profile(name)
         tasks = create_tasks_from_roadmap(profile)
-        tasks = set_deadlines(tasks)
         for t in tasks:
             profile.add_task(t)
         profile, _ = do_checkin(profile, tasks[0].id, "completed")
@@ -628,15 +524,13 @@ def test_step7_data_continuity():
         assert "skills" in final.have
         assert final.want["target_role"] == "AI Engineer"
         assert final.gap["match_score"] == 55
-        assert final.plan["roadmap"]["total_duration"] == "2个月"
-        assert final.plan["schedule"]["total_days"] == 5
+        assert final.plan["roadmap"]["phases"][0]["id"] == "phase_1"
         assert len(final.tasks) == len(tasks)
         assert len(final.checkins) == 1
-        print(f"[OK] 全链路数据连续性验证通过")
+        print("[OK] 全链路数据连续性验证通过")
         print(f"  - who: {final.who['name']}")
         print(f"  - gap: 匹配度 {final.gap['match_score']}")
-        print(f"  - roadmap: {final.plan['roadmap']['total_duration']}")
-        print(f"  - schedule: {final.plan['schedule']['total_days']} 天")
+        print(f"  - roadmap: {len(final.plan['roadmap']['phases'])} 个阶段")
         print(f"  - tasks: {len(final.tasks)} 个，checkins: {len(final.checkins)} 次")
 
         print()
@@ -655,40 +549,35 @@ def test_step8_mcp_tools_registered():
 
     tools = {t.name for t in mcp._tool_manager.list_tools()}
 
-    # 全链路工具
-    chain_tools = [
-        "start_session",
-        "parse_resume", "intake", "finalize_profile",
-        "import_jd", "import_jd_file", "analyze_gaps", "save_gap_analysis",
+    expected = [
+        # 建档
+        "start_session", "parse_resume", "intake", "finalize_profile",
+        "import_jd", "import_jd_file",
+        # 数据获取与分析
+        "list_data_sources", "get_scraper_guide", "fetch_company_jobs",
+        "fetch_jd_detail", "search_knowledge",
+        "analyze_gaps", "save_gap_analysis",
+        # 规划
         "generate_roadmap", "save_roadmap",
-        "generate_schedule", "save_schedule", "export_ics",
-        "search_knowledge",
+        # 任务执行
+        "generate_tasks", "get_next_tasks", "checkin_task",
+        # 洞察与产出
+        "trigger_insight", "apply_insight", "get_progress",
+        "get_workflow_status", "export_dashboard",
+        # 计划导入
+        "import_plan",
     ]
 
-    # 任务与洞察工具
-    task_tools = [
-        "generate_tasks", "get_today_tasks", "checkin_task",
-        "trigger_insight", "apply_insight", "get_progress", "suggest_adjustment",
-        "get_workflow_status",
-    ]
+    missing = [t for t in expected if t not in tools]
+    extra = [t for t in tools if t not in expected]
 
-    # 版本管理工具
-    version_tools = [
-        "import_plan", "compare_plan_versions", "replace_plan",
-        "merge_plan", "list_plan_versions", "restore_plan",
-    ]
+    assert not missing, f"缺少工具: {missing}"
+    assert not extra, f"多余工具: {extra}"
 
-    all_expected = chain_tools + task_tools + version_tools
-    missing = [t for t in all_expected if t not in tools]
-
-    if missing:
-        print(f"[FAIL] 缺少工具: {missing}")
-        return False
-
-    for t in all_expected:
+    for t in sorted(expected):
         print(f"[OK] {t}")
-
     print(f"\n共注册 {len(tools)} 个 MCP tools")
+
     print()
     return True
 
@@ -697,15 +586,16 @@ def main():
     """运行全链路测试。"""
     print("\n" + "=" * 60)
     print("全链路贯通测试")
-    print("建档 → 差距分析 → 路线图 → 日程 → 进度追踪")
+    print("建档 → 差距分析 → 路线图 → 任务执行 → 打卡")
     print("=" * 60 + "\n")
 
     tests = [
         ("建档", test_step1_build_profile),
         ("差距分析", test_step2_gap_analysis),
         ("路线图", test_step3_roadmap),
-        ("日程生成", test_step4_schedule),
-        ("进度追踪", test_step5_progress_tracking),
+        ("进度追踪", test_step4_progress_tracking),
+        ("阶段审计去重", test_step5_stage_audit_dedup),
+        ("重建保留进度", test_step6_rebuild_preserves_progress),
         ("数据连续性", test_step7_data_continuity),
         ("MCP Tools", test_step8_mcp_tools_registered),
     ]

@@ -105,7 +105,7 @@ graph LR
 | `start_session` | 初始化新的职业规划会话 |
 | `intake` | 逐步填充档案（who/have/want） |
 | `finalize_profile` | 确认档案完整，生成摘要，解锁分析工具 |
-| `list_company_jobs` | 列出可用企业数据源（BOSS直聘/字节/牛客） |
+| `list_data_sources` | 列出可用企业数据源（BOSS直聘/字节/牛客） |
 | `fetch_company_jobs` | 抓取真实岗位（含薪资范围） |
 | `fetch_jd_detail` | 获取 JD 全文 |
 | `search_knowledge` | 检索本地知识库 |
@@ -115,19 +115,19 @@ graph LR
 
 | 工具 | 作用 |
 |------|------|
-| `generate_roadmap` | 基于差距分析生成分阶段路线图 |
-| `generate_schedule` | 路线图拆解为日/周日程，支持导出 ICS |
-| `get_today_tasks` | 获取今日待办任务 |
-| `checkin_task` | 打卡任务（完成/跳过/部分完成） |
+| `generate_roadmap` | 基于差距分析生成分阶段路线图（只定顺序与标准，无时限） |
+| `generate_tasks` | 从路线图生成任务列表 |
+| `get_next_tasks` | 当前阶段的下一步任务（关卡式推进） |
+| `checkin_task` | 打卡任务，完成自动沉淀能力证据 |
 | `get_progress` | 获取进度概览 |
 
-### 洞察与调整
+### 洞察与产出
 
 | 工具 | 作用 |
 |------|------|
-| `trigger_insight` | 触发洞察检查（阶段完成/事件触发） |
-| `suggest_adjustment` | AI 提出调整建议 |
-| `apply_adjustment` | 应用调整（小幅自动，大幅需确认） |
+| `trigger_insight` / `apply_insight` | 洞察检查与应用调整（阶段审计/事件触发） |
+| `get_workflow_status` | 工作流状态 + 目标变更检测 |
+| `export_dashboard` | 生成阶段驱动的自包含 HTML 仪表盘 |
 
 ## 文档
 

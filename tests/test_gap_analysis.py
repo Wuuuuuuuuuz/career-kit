@@ -11,10 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.stdout.reconfigure(encoding='utf-8')
 
 from src.models import CareerProfile
-from src.tools.gap_analyzer import (
-    format_gap_report,
-    parse_gap_analysis,
-)
+from src.tools.gap_analyzer import format_gap_report
 from src.tools.methodology import build_methodology_context, load_methodology
 from src.tools.knowledge_search import search_knowledge
 from src.tools.profile import load_profile, merge_section, save_profile
@@ -161,7 +158,7 @@ def test_build_sop_prompt():
 
 
 def test_parse_analysis():
-    """测试 LLM 输出解析。"""
+    """测试 LLM 输出解析（server 层统一走 JSON 解析，code block 由 _parse_json_param 前置处理）。"""
     print("=" * 60)
     print("测试 6: 解析 LLM 输出")
     print("=" * 60)
@@ -214,7 +211,7 @@ def test_parse_analysis():
     ```
     '''
 
-    result = parse_gap_analysis(llm_response)
+    result = json.loads(llm_response.split("```json")[1].split("```")[0].strip())
     assert result["match_score"] == 45
     assert result["match_level"] == "partial_match"
     assert len(result["skill_gaps"]) == 1
@@ -223,11 +220,14 @@ def test_parse_analysis():
     assert result["interview_preparation"]["study_plan"]["week_1"] == ["LangChain 基础"]
     print("[OK] 标准 JSON 解析成功")
 
-    # 测试解析失败
-    result3 = parse_gap_analysis("这不是 JSON")
-    assert "raw_analysis" in result3
-    assert result3["match_score"] == 0
-    print("[OK] 解析失败时返回原始文本")
+    # 测试解析失败路径由 server 层 error_response 兜底
+    from src.server import _parse_json_param
+    try:
+        _parse_json_param("这不是 JSON", "差距分析")
+        raise AssertionError("应当抛出 InvalidJsonError")
+    except Exception as exc:
+        assert type(exc).__name__ == "InvalidJsonError"
+    print("[OK] 非法输入被 server 层统一拒绝")
 
     print()
 

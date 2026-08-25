@@ -44,54 +44,24 @@ save_gap_analysis(gap_json='{
 }')
 ```
 
-### 3. 规划
+### 3. 规划（只定顺序与标准，不定时间）
 
-```
-generate_roadmap()
-save_roadmap(roadmap_json='{
-  "phases": [
-    {
-      "name": "基础学习",
-      "duration": "2周",
-      "milestones": [
-        {"name": "Python 基础", "duration": "3天"},
-        {"name": "LLM 基础", "duration": "4天"},
-        {"name": "LangChain 入门", "duration": "7天"}
-      ]
-    },
-    {
-      "name": "项目实战",
-      "duration": "2周",
-      "milestones": [
-        {"name": "RAG 项目", "duration": "7天"},
-        {"name": "Agent 项目", "duration": "7天"}
-      ]
-    },
-    {
-      "name": "面试准备",
-      "duration": "1周",
-      "milestones": [
-        {"name": "简历优化", "duration": "2天"},
-        {"name": "面试题准备", "duration": "5天"}
-      ]
-    }
-  ]
-}')
-generate_schedule(scope="this_week")
-save_schedule(schedule_json='{"schedule":[...]}')
-```
+> save_roadmap 的 phases 中不要写 duration 字段，里程碑用 done_criteria 表达完成标准。
+>
+> generate_schedule / save_schedule 已下线——用户想要日程时，
+> 在对话中直接把任务写成 markdown/HTML 文档交付，时间由用户自己填。
 
-### 4. 任务管理
+### 4. 任务执行
 
 ```
 generate_tasks()
-get_today_tasks()
+get_next_tasks()
 checkin_task(task_id="task_001", status="completed", notes="Python 基础学完")
 ```
 
-### 5. 洞察调整
+### 5. 洞察调整（阶段完成后审计）
 
 ```
-trigger_insight(trigger_type="proactive")
-apply_insight(insight_json='{"status":"on_track", "summary":"进度正常", "adjustment_needed":false}')
+trigger_insight(trigger_type="stage_audit")
+apply_insight(insight_json='{"trigger_type":"stage_audit", "status":"on_track", "summary":"进度正常", "adjustment_needed":false}')
 ```

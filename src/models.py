@@ -23,19 +23,16 @@ class TaskStatus(str):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
-    OVERDUE = "overdue"
     SKIPPED = "skipped"
 
 
 class Task(BaseModel):
-    """任务模型。"""
+    """任务模型。产品不规划时间：任务只有顺序和状态，快慢由用户掌握。"""
     id: str
     name: str
     description: str = ""
     phase_id: str = ""
     milestone_id: str = ""
-    estimated_days: float = 1
-    deadline: str = ""
     status: str = TaskStatus.PENDING
     priority: str = "medium"  # high | medium | low
     started_at: str | None = None
@@ -56,30 +53,7 @@ class Task(BaseModel):
         self.status = TaskStatus.SKIPPED
         self.completed_at = datetime.now().isoformat()
         if reason:
-            self.description = f"{self.description} [跳过原因: {reason}]"
-
-    def is_overdue(self) -> bool:
-        """检查任务是否超期。"""
-        if self.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED):
-            return False
-        if not self.deadline:
-            return False
-        try:
-            deadline_dt = datetime.fromisoformat(self.deadline)
-            return datetime.now() > deadline_dt
-        except ValueError:
-            return False
-
-    def days_overdue(self) -> float:
-        """计算超期天数。"""
-        if not self.is_overdue():
-            return 0
-        try:
-            deadline_dt = datetime.fromisoformat(self.deadline)
-            delta = datetime.now() - deadline_dt
-            return delta.total_seconds() / 86400
-        except ValueError:
-            return 0
+            self.description = f"{self.description} [跳过原因: {reason}]".strip()
 
 
 class CheckIn(BaseModel):
@@ -139,6 +113,13 @@ class CareerProfile(BaseModel):
     plan_history: list[PlanVersion] = Field(default_factory=list, description="计划版本历史")
     journey: list[JourneyEntry] = Field(default_factory=list, description="学习轨迹——记录每次交互的知识和产出")
 
+    # 阶段审计记录：已触发过阶段审计的 phase_id 不再重复触发
+    audited_phases: list[str] = Field(default_factory=list, description="已完成审计的阶段 id 列表")
+
+    # 目标变更检测依据：各 section 最近更新时间 / 路线图保存时间
+    section_updated_at: dict[str, str] = Field(default_factory=dict, description="各 section 最近一次写入时间")
+    plan_saved_at: str = ""  # save_roadmap 每次覆盖
+
     summary: str = ""
     version: int = 0
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
@@ -155,6 +136,7 @@ class CareerProfile(BaseModel):
             raise ValueError(f"未知 section：{section}，必须是 who/have/want/gap/plan")
         target = getattr(self, section)
         _deep_merge(target, data)
+        self.section_updated_at[section] = datetime.now().isoformat()
         self.touch()
 
     def save_plan_snapshot(self, source: str, import_file: str | None = None) -> None:
@@ -168,15 +150,6 @@ class CareerProfile(BaseModel):
         )
         self.plan_history.append(snapshot)
 
-    def restore_plan_version(self, version: int) -> None:
-        """恢复到指定版本的计划。"""
-        for snapshot in self.plan_history:
-            if snapshot.version == version:
-                self.plan = snapshot.content.copy()
-                self.touch()
-                return
-        raise ValueError(f"版本 {version} 不存在")
-
     def append_journey(self, entry: JourneyEntry) -> None:
         """追加学习轨迹条目并更新版本。"""
         self.journey.append(entry)
@@ -188,14 +161,6 @@ class CareerProfile(BaseModel):
             if task.id == task_id:
                 return task
         return None
-
-    def get_today_tasks(self) -> list[Task]:
-        """获取今日待办任务（pending 或 in_progress）。"""
-        return [t for t in self.tasks if t.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)]
-
-    def get_overdue_tasks(self) -> list[Task]:
-        """获取超期任务。"""
-        return [t for t in self.tasks if t.is_overdue()]
 
     def add_task(self, task: Task) -> None:
         """添加任务。"""

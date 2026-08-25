@@ -1,7 +1,8 @@
 """路线图解析与格式化——将 LLM 输出解析为结构化路线图并格式化展示。
 
-parse_roadmap: 将 LLM 输出解析为结构化路线图数据
-format_roadmap: 将结构化数据格式化为可读文本
+任务 schema 与 sop/roadmap.yaml 一致：{name, description, priority}。
+阶段 id 由本模块规范化（phase_N），是任务生成与阶段审计的唯一来源。
+产品不规划时间：路线图不含时长字段，只定义顺序与完成标准。
 """
 
 from __future__ import annotations
@@ -21,15 +22,15 @@ def parse_roadmap(llm_response: str) -> dict[str, Any]:
     """
     json_str = llm_response
 
-    # 从 markdown code block 中提取
+    # 兼容 markdown code block 包裹
     if "```json" in llm_response:
         start = llm_response.index("```json") + 7
         end = llm_response.index("```", start)
         json_str = llm_response[start:end].strip()
     elif "```" in llm_response:
         start = llm_response.index("```") + 3
-        end = llm_response.index("```", start)
-        json_str = llm_response[start:end].strip()
+        end = ll_response.index("```", start)
+        json_str = ll_response[start:end].strip()
 
     try:
         result = json.loads(json_str)
@@ -37,7 +38,6 @@ def parse_roadmap(llm_response: str) -> dict[str, Any]:
         return {
             "raw_roadmap": llm_response,
             "roadmap": {
-                "total_duration": "",
                 "strategy_summary": "（解析失败，请查看 raw_roadmap）",
                 "phases": [],
             },
@@ -48,55 +48,43 @@ def parse_roadmap(llm_response: str) -> dict[str, Any]:
         result = {"roadmap": result}
 
     roadmap = result["roadmap"]
-    roadmap.setdefault("total_duration", "")
+    roadmap.pop("total_duration", None)  # 产品不规划时间
     roadmap.setdefault("strategy_summary", "")
     roadmap.setdefault("phases", [])
 
-    # 确保每个 phase 有必要的字段
-    for phase in roadmap["phases"]:
-        phase.setdefault("id", "")
+    # 确保每个 phase 有必要字段；id 统一为 phase_N，作为任务与审计的关联键
+    for idx, phase in enumerate(roadmap["phases"]):
+        phase["id"] = f"phase_{idx + 1}"
         phase.setdefault("type", "learn")
         phase.setdefault("name", "")
-        phase.setdefault("duration", "")
         phase.setdefault("goal", "")
         phase.setdefault("kpi", {"metric": "", "target": "", "evidence": ""})
         phase.setdefault("resume_value", "")
         phase.setdefault("milestones", [])
 
-        # 确保每个 milestone 有必要的字段
-        for ms in phase["milestones"]:
-            ms.setdefault("id", "")
+        for ms_idx, ms in enumerate(phase["milestones"]):
+            ms["id"] = f"phase_{idx + 1}_ms_{ms_idx + 1}"
             ms.setdefault("name", "")
-            ms.setdefault("duration", "")
             ms.setdefault("tasks", [])
             ms.setdefault("deliverable", "")
             ms.setdefault("done_criteria", "")
 
-            # 确保每个 task 有必要的字段
             for task in ms["tasks"]:
-                task.setdefault("task", "")
-                task.setdefault("time", "")
+                task.setdefault("name", "")
+                task.setdefault("description", "")
                 task.setdefault("priority", "medium")
 
     return result
 
 
 def format_roadmap(roadmap_data: dict[str, Any]) -> str:
-    """格式化路线图为可读文本。
-
-    Args:
-        roadmap_data: parse_roadmap 返回的结构化数据
-
-    Returns:
-        格式化的 Markdown 文本
-    """
+    """格式化路线图为可读文本。"""
     roadmap = roadmap_data.get("roadmap", roadmap_data)
     lines = []
 
-    total = roadmap.get("total_duration", "")
     strategy = roadmap.get("strategy_summary", "")
 
-    lines.append(f"## 路线图（{total}）")
+    lines.append("## 路线图")
     lines.append("")
     if strategy:
         lines.append(strategy)
@@ -112,40 +100,36 @@ def format_roadmap(roadmap_data: dict[str, Any]) -> str:
             "research": "🔬",
         }.get(phase_type, "📋")
 
-        lines.append(f"### {type_icon} Phase: {phase.get('name', '')} [{phase_type}] {phase.get('duration', '')}")
+        lines.append(f"### {type_icon} {phase.get('name', '')} [{phase_type}]（{phase.get('id', '')}）")
         lines.append(f"**目标**：{phase.get('goal', '')}")
         lines.append("")
 
-        # KPI
         kpi = phase.get("kpi", {})
-        if kpi.get("metric"):
+        if isinstance(kpi, dict) and kpi.get("metric"):
             lines.append(f"**KPI**：{kpi['metric']} → 目标：{kpi.get('target', '?')}")
             if kpi.get("evidence"):
                 lines.append(f"**验证方式**：{kpi['evidence']}")
             lines.append("")
 
-        # 简历价值
         resume_val = phase.get("resume_value", "")
         if resume_val:
             lines.append(f"**简历价值**：{resume_val}")
             lines.append("")
 
-        # 里程碑
-        milestones = phase.get("milestones", [])
-        for ms in milestones:
-            lines.append(f"**{ms.get('name', '')}**（{ms.get('duration', '')}）")
+        for ms in phase.get("milestones", []):
+            done_criteria = ms.get("done_criteria", "")
+            header = f"**{ms.get('name', '')}**"
+            if done_criteria:
+                header += f"—完成标准：{done_criteria}"
+            lines.append(header)
 
-            # 任务列表
-            tasks = ms.get("tasks", [])
-            for t in tasks:
+            for t in ms.get("tasks", []):
                 priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t.get("priority", "medium"), "⚪")
-                lines.append(f"  - {priority_icon} {t.get('task', '')} [{t.get('time', '')}]")
+                desc = f"—{t['description']}" if t.get("description") else ""
+                lines.append(f"  - {priority_icon} {t.get('name', '')}{desc}")
 
-            # 交付物和完成标准
             if ms.get("deliverable"):
                 lines.append(f"  📦 交付物：{ms['deliverable']}")
-            if ms.get("done_criteria"):
-                lines.append(f"  ✅ 完成标准：{ms['done_criteria']}")
             lines.append("")
 
     return "\n".join(lines)

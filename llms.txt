@@ -1,6 +1,7 @@
 # Career Kit
 
-> 有真实数据源的 AI 职业陪练。帮你设计最优路线，细化到每天任务，跟着做、打卡，达成目标。
+> 有真实数据源的 AI 职业陪练。帮你设计最优路线，拆成分阶段任务，跟着做、打卡，达成目标。
+> 顺序归产品，时间归用户——不为任务设定时限，节奏由用户掌握。
 
 ## 文档索引
 
@@ -15,13 +16,15 @@
 
 ```
 1. start_session()
-2. intake(who/have/want)
+2. intake(who/have/want)                       # 技能需附证据与置信度
 3. finalize_profile()
-4. list_company_jobs()                        # 查看可用企业数据源
+4. list_data_sources()                        # 查看可用企业数据源
 5. fetch_company_jobs(company=..., params=...)  # 抓取真实岗位（含薪资）
 6. analyze_gaps() → save_gap_analysis()       # 基于真实数据分析
-7. generate_roadmap() → save_roadmap()
-8. generate_tasks()
+7. generate_roadmap() → save_roadmap()        # 只定顺序与完成标准，无时长
+8. generate_tasks() → get_next_tasks()
+9. checkin_task(...)                          # 完成即沉淀能力证据
+10. export_dashboard()                        # 生成阶段进度仪表盘
 ```
 
 ## 核心原则
@@ -29,3 +32,4 @@
 1. **必须使用真实数据**：分析前必须用 `fetch_company_jobs` / `search_knowledge` 获取真实数据，不要凭 LLM 知识编造
 2. **按工作流执行**：每个阶段有前置条件，不要跳过步骤
 3. **保存中间结果**：使用 `save_*` 工具保存 LLM 生成的内容
+4. **不规划时间**：路线图和任务不含任何时长字段；用户想要日程时在对话中直接写 markdown/HTML 文档交付，时间由用户自己填

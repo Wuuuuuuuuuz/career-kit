@@ -1,13 +1,13 @@
 name: 路线图生成
-version: "2.0"
-description: 从差距分析出发，生成可执行的分阶段职业路线图，每阶段有量化指标和简历价值
+version: "3.0"
+description: 从差距分析出发，生成可执行的分阶段职业路线图。产品不规划时间——只定义顺序、产出与完成标准，节奏由用户掌握
 
 methodology:
   principles:
     - "阶段类型决定产出：learn 打基础（通常无简历价值），project/intern/research 落简历（必须有 resume_value）"
-    - "KPI 必须可量化——不能是'学会'这种模糊表述，要有数字、有证据"
-    - "里程碑拆分要现实——每个里程碑有明确交付物和完成标准"
-    - "任务粒度到天——每个 task 是一天内可完成的，时间估算要考虑用户基础水平"
+    - "KPI 必须可量化——不能是'学会'这种模糊表述，要有数字、有证据；但不设定时限"
+    - "不为任务标注天数或时长——用户的时间分配完全由用户自己决定，快慢都是正常的"
+    - "里程碑必须有明确的完成标准（done_criteria），完成与否看标准不看日历"
     - "善于建议高价值活动：开源 PR、黑客马拉松、技术博客——这些都能归入 project 类型"
     - "市场数据驱动设计——用真实 JD 中的技能要求来决定学什么、做什么"
 
@@ -27,12 +27,12 @@ methodology:
     - id: design_roadmap
       name: 设计路线图
       guidance: |
-        LLM 动态设计阶段划分、KPI、里程碑、每日任务。分两步：
+        LLM 动态设计阶段划分、KPI、里程碑与任务。分两步：
 
         第一步——差距提取：
         - 需要弥补的技能（按优先级排序，标注当前水平和目标水平）
         - 需要创造的经历（项目/实习/研究等）
-        - 时间约束（可用时间、deadline）
+        - 用户已有的能力证据（have.capability_evidence，来自历史打卡沉淀）
         - 起点评估（当前水平总结）
 
         第二步——路线图设计：
@@ -45,11 +45,10 @@ methodology:
         设计原则：
         1. 阶段顺序由 LLM 根据实际情况决定，没有固定模式
         2. learn 阶段通常在最前面，为后续阶段打基础
-        3. 每个阶段必须有量化指标（KPI）
+        3. 每个阶段必须有量化指标（KPI），但不得包含时间承诺
         4. project/intern/research 阶段必须有 resume_value
-        5. 每个阶段拆成 2-3 个里程碑
-        6. 每个里程碑拆成具体任务，粒度到天
-        7. 任务时间估算要考虑用户基础水平
+        5. 每个阶段拆成 2-3 个里程碑，每个里程碑有明确完成标准
+        6. 任务粒度到「一次坐下来可完成」的粒度，但不估算天数
       data_needs:
         - type: gap_summary
           query_hint: "从 profile.gap 中获取"
@@ -60,16 +59,16 @@ methodology:
         - type: user_want
           query_hint: "从 profile 中获取"
           local_paths: []
-      quality_gate: "每个阶段有 KPI 和 resume_value（learn 类型除外），任务粒度到天"
+      quality_gate: "每个阶段有 KPI 和 resume_value（learn 类型除外），每个里程碑有完成标准，全程无时长字段"
       depends_on: [gather_market_data]
 
   output_schema:
-    total_duration: "总时长（如：3个月）"
     strategy_summary: "整体策略说明（一段话）"
     phases: |
       阶段列表，每阶段包含：
-      - id, type, name, duration, goal
+      - type, name, goal（id 由系统自动生成，无需提供）
       - kpi: { metric, target, evidence }
       - resume_value: 如何写到简历上
-      - milestones: { id, name, duration, tasks[], deliverable, done_criteria }
-      每个 task 包含：task, time, priority
+      - milestones: { name, tasks[], deliverable, done_criteria }
+      每个 task 包含：name, description, priority
+      注意：不要输出任何 duration/total_duration/estimated_days 类字段
