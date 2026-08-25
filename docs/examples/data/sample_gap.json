@@ -1,0 +1,52 @@
+{
+  "match_score": 45,
+  "skill_gaps": [
+    {
+      "skill": "Python",
+      "priority": "high",
+      "current_level": "基础",
+      "target_level": "熟练",
+      "source": "BOSS直聘 JD"
+    },
+    {
+      "skill": "LLM",
+      "priority": "high",
+      "current_level": "无",
+      "target_level": "了解原理",
+      "source": "BOSS直聘 JD"
+    },
+    {
+      "skill": "LangChain",
+      "priority": "medium",
+      "current_level": "无",
+      "target_level": "能独立开发",
+      "source": "BOSS直聘 JD"
+    },
+    {
+      "skill": "RAG",
+      "priority": "medium",
+      "current_level": "无",
+      "target_level": "了解原理",
+      "source": "BOSS直聘 JD"
+    },
+    {
+      "skill": "Agent设计",
+      "priority": "medium",
+      "current_level": "无",
+      "target_level": "能独立设计",
+      "source": "BOSS直聘 JD"
+    }
+  ],
+  "priority_actions": [
+    "学习 Python 高级特性",
+    "学习 LLM 基础概念",
+    "学习 LangChain 框架",
+    "学习 RAG 原理",
+    "学习 Agent 设计模式"
+  ],
+  "strengths": [
+    "有前端开发经验",
+    "有项目经验",
+    "英语基础好"
+  ]
+}

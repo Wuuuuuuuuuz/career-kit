@@ -1,0 +1,103 @@
+{
+  "phases": [
+    {
+      "name": "基础学习",
+      "duration": "2周",
+      "description": "学习 AI Agent 开发的基础知识",
+      "milestones": [
+        {
+          "name": "Python 进阶",
+          "duration": "3天",
+          "description": "学习 Python 高级特性",
+          "tasks": [
+            {"name": "学习装饰器", "estimated_days": 1},
+            {"name": "学习生成器", "estimated_days": 1},
+            {"name": "学习异步编程", "estimated_days": 1}
+          ]
+        },
+        {
+          "name": "LLM 基础",
+          "duration": "4天",
+          "description": "学习大语言模型基础概念",
+          "tasks": [
+            {"name": "了解 Transformer 架构", "estimated_days": 1},
+            {"name": "学习 Prompt Engineering", "estimated_days": 1},
+            {"name": "学习 API 调用", "estimated_days": 1},
+            {"name": "实践：调用 OpenAI API", "estimated_days": 1}
+          ]
+        },
+        {
+          "name": "LangChain 入门",
+          "duration": "7天",
+          "description": "学习 LangChain 框架基础",
+          "tasks": [
+            {"name": "安装和配置", "estimated_days": 1},
+            {"name": "学习 Chain", "estimated_days": 2},
+            {"name": "学习 Memory", "estimated_days": 1},
+            {"name": "学习 Tools", "estimated_days": 1},
+            {"name": "学习 Agent", "estimated_days": 2}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "项目实战",
+      "duration": "2周",
+      "description": "通过项目巩固知识",
+      "milestones": [
+        {
+          "name": "RAG 项目",
+          "duration": "7天",
+          "description": "构建一个 RAG 应用",
+          "tasks": [
+            {"name": "设计架构", "estimated_days": 1},
+            {"name": "实现文档加载", "estimated_days": 1},
+            {"name": "实现向量检索", "estimated_days": 2},
+            {"name": "实现问答链", "estimated_days": 2},
+            {"name": "测试和优化", "estimated_days": 1}
+          ]
+        },
+        {
+          "name": "Agent 项目",
+          "duration": "7天",
+          "description": "构建一个 Agent 应用",
+          "tasks": [
+            {"name": "设计 Agent 架构", "estimated_days": 1},
+            {"name": "实现 Tools", "estimated_days": 2},
+            {"name": "实现 Memory", "estimated_days": 1},
+            {"name": "实现 Agent 循环", "estimated_days": 2},
+            {"name": "测试和优化", "estimated_days": 1}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "面试准备",
+      "duration": "1周",
+      "description": "准备面试",
+      "milestones": [
+        {
+          "name": "简历优化",
+          "duration": "2天",
+          "description": "优化简历",
+          "tasks": [
+            {"name": "整理项目经验", "estimated_days": 1},
+            {"name": "优化简历格式", "estimated_days": 1}
+          ]
+        },
+        {
+          "name": "面试题准备",
+          "duration": "5天",
+          "description": "准备常见面试题",
+          "tasks": [
+            {"name": "准备 Python 面试题", "estimated_days": 1},
+            {"name": "准备 LLM 面试题", "estimated_days": 1},
+            {"name": "准备 LangChain 面试题", "estimated_days": 1},
+            {"name": "准备项目面试题", "estimated_days": 1},
+            {"name": "模拟面试", "estimated_days": 1}
+          ]
+        }
+      ]
+    }
+  ]
+}

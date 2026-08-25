@@ -1,0 +1,239 @@
+# Career Kit LLM 使用指南
+
+> 本指南帮助 LLM 理解如何使用 Career Kit 的工具，完成职业规划全流程。
+
+## 核心理念
+
+Career Kit 是一个**有真实数据源的 AI 职业陪练**。它不只是提供信息，而是：
+- 帮你设计最优路线
+- 细化到每天任务
+- 跟着做、打卡
+- 达成目标
+
+## 真实数据源
+
+Career Kit 的核心优势是有**真实数据**，而不是凭空分析：
+
+| 数据源 | 内容 | 用途 | 文档 |
+|--------|------|------|------|
+| BOSS直聘 scraper | 真实岗位 JD、薪资、要求 | 了解市场需求 | [BOSS直聘文档](src/scrapers/boss/README.md) |
+| 企业库 | 已收录的企业列表 | 查看可用数据源 | [企业库总览](src/scrapers/README.md) |
+| 知识库 | 用户积累的求职资料 | 参考历史数据 | [知识库结构](data/knowledge/README.md) |
+| 搜索结果 | 面经、公司评价、行业报告 | 补充信息 | - |
+
+**关键原则**：在分析和规划之前，必须先用 `search_market` 搜索真实数据。不要凭 LLM 自身知识做分析。
+
+## 工作流概览
+
+```
+用户目标 → AI 分析差距 → 设计路线图 → 细化到每天任务 → 用户打卡 → AI 洞察调整 → 达成目标
+```
+
+## 工具分类
+
+> 详细工具列表见 [MCP 工具文档](src/tools/README.md)
+
+### 1. 建档工具
+
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `start_session` | 初始化会话 | 用户开始新规划时 |
+| `intake` | 填充档案 | 逐步填充 who/have/want |
+| `finalize_profile` | 确认档案 | 档案完整后 |
+| `import_jd` | 导入 JD | 有目标岗位时 |
+
+### 2. 分析工具
+
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `analyze_gaps` | 差距分析 | 档案确认后 |
+| `save_gap_analysis` | 保存分析结果 | LLM 分析完成后 |
+| `search_market` | 搜索市场信息 | 需要补充数据时 |
+
+### 3. 规划工具
+
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `generate_roadmap` | 生成路线图 | 差距分析完成后 |
+| `save_roadmap` | 保存路线图 | LLM 生成完成后 |
+| `generate_schedule` | 生成日程 | 路线图保存后 |
+| `save_schedule` | 保存日程 | LLM 生成完成后 |
+
+### 4. 任务管理工具
+
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `generate_tasks` | 从路线图生成任务 | 路线图和日程保存后 |
+| `get_today_tasks` | 获取今日任务 | 用户想查看任务时 |
+| `checkin_task` | 打卡任务 | 用户完成任务时 |
+
+### 5. 洞察工具
+
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `trigger_insight` | 触发洞察分析 | 阶段完成/事件/定期 |
+| `apply_insight` | 应用洞察结果 | LLM 分析完成后 |
+| `get_progress` | 查看进度 | 用户想了解进度时 |
+| `suggest_adjustment` | 提出调整建议 | 有超期任务时 |
+
+### 6. 状态查询工具
+
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `get_workflow_status` | 获取工作流状态 | 不确定下一步时 |
+
+## 完整工作流示例
+
+### 阶段 1：建档
+
+```
+1. start_session()
+2. intake(section="who", data='{"name":"张三", "education":"计算机本科"}')
+3. intake(section="have", data='{"skills":["Python", "React"], "experience":"1年前端"}')
+4. intake(section="want", data='{"target_role":"AI Agent 工程师", "salary":"20k-30k"}')
+5. finalize_profile()
+```
+
+### 阶段 2：分析（必须先搜索真实数据）
+
+```
+1. analyze_gaps()
+2. search_market(query="AI Agent 工程师 技能要求")  // 必须调用，获取真实 JD 数据
+3. search_market(query="AI Agent 工程师 面试题")    // 补充面试信息
+4. save_gap_analysis(gap_json='{"match_score":65, "skill_gaps":[{"skill":"LLM", "source":"BOSS直聘 JD"}, ...]}')
+```
+
+**注意**：gap_json 中的 skill_gaps 必须基于真实数据，不能凭空想象。每个差距应标注数据来源（如 "source": "BOSS直聘 JD"）。
+
+### 阶段 3：规划（基于真实数据生成路线图）
+
+```
+1. generate_roadmap()
+2. save_roadmap(roadmap_json='{"phases":[{"name":"基础学习", "tasks":[{"name":"学习 LLM 基础", "source":"市场数据要求"}]}, ...]}')
+3. generate_schedule(scope="this_week")
+4. save_schedule(schedule_json='{"schedule":[...]}')
+```
+
+**注意**：路线图中的任务应基于市场真实要求，不能脱离实际。
+
+### 阶段 4：任务管理
+
+```
+1. generate_tasks()
+2. get_today_tasks()
+3. checkin_task(task_id="task_001", status="completed", notes="提前完成")
+```
+
+### 阶段 5：洞察调整
+
+```
+1. trigger_insight(trigger_type="proactive")
+2. apply_insight(insight_json='{"status":"on_track", ...}')
+```
+
+## 返回值格式
+
+所有工具都返回 JSON 对象，包含以下字段：
+
+```json
+{
+  "message": "消息内容",
+  "next_steps": ["下一步工具1", "下一步工具2"],
+  "context": {"phase": "当前阶段", "其他数据": "..."}
+}
+```
+
+## 错误处理
+
+当工具返回错误时，格式如下：
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "错误描述",
+    "details": {}
+  }
+}
+```
+
+常见错误代码：
+- `MISSING_DATA`：缺少必要数据
+- `INVALID_JSON`：JSON 格式错误
+- `INVALID_SECTION`：无效的 section 名称
+
+## 最佳实践
+
+1. **先调用 `get_workflow_status`**：了解当前状态，避免重复操作
+2. **按 `next_steps` 提示操作**：工具返回的 `next_steps` 是推荐的下一步
+3. **保存中间结果**：`save_*` 工具用于保存 LLM 生成的内容
+4. **必须使用真实数据**：在分析和规划前，必须调用 `search_market` 获取真实市场数据
+5. **定期调用 `trigger_insight`**：保持进度追踪和调整
+6. **标注数据来源**：在 gap_json 和 roadmap_json 中标注数据来源（如 "source": "BOSS直聘 JD"）
+
+## 常见场景
+
+### 场景 1：用户说"我想转行"
+
+```
+1. start_session()
+2. intake(who/have/want)
+3. finalize_profile()
+4. analyze_gaps()
+5. search_market(query="目标岗位 技能要求")   // 必须搜索真实数据
+6. search_market(query="目标岗位 面试题")     // 补充面试信息
+7. save_gap_analysis()                        // 基于真实数据分析
+8. generate_roadmap()
+9. save_roadmap()                             // 基于真实数据规划
+10. generate_schedule()
+11. save_schedule()
+12. generate_tasks()
+```
+
+### 场景 2：用户说"今天任务完成了"
+
+```
+1. get_today_tasks()
+2. checkin_task(task_id="task_001", status="completed")
+```
+
+### 场景 3：用户说"我拿到面试了"
+
+```
+1. trigger_insight(trigger_type="event", event_description="拿到大厂面试")
+2. apply_insight(insight_json='{"status":"need_adjustment", ...}')
+```
+
+### 场景 4：用户说"进度太慢了"
+
+```
+1. get_progress()
+2. trigger_insight(trigger_type="proactive")
+3. apply_insight(insight_json='{"status":"behind", ...}')
+```
+
+## 注意事项
+
+1. **不要跳过步骤**：每个阶段都有前置条件
+2. **保存重要数据**：使用 `save_*` 工具保存 LLM 生成的内容
+3. **处理错误**：检查返回值中的 `error` 字段
+4. **使用 `get_workflow_status`**：当不确定下一步时，先调用此工具
+5. **尊重用户选择**：调整建议需要用户确认
+
+## 反模式（不要这样做）
+
+1. **凭空分析**：不要在没有调用 `search_market` 的情况下做差距分析
+2. **编造数据**：不要在 gap_json 中编造 skill_gaps，必须基于真实搜索结果
+3. **跳过搜索**：不要跳过 `search_market` 直接调用 `save_gap_analysis`
+4. **忽略数据来源**：不要在分析结果中省略数据来源标注
+
+## 技术细节
+
+- 所有数据存储在本地 `~/.career-kit/`
+- 支持多档案（通过 `name` 参数）
+- 档案版本控制（通过 `version` 字段）
+- 学习轨迹记录（通过 `journey` 字段）
+
+---
+
+*本指南基于 Career Kit Phase 2 版本*
