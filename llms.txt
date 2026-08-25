@@ -1,248 +1,209 @@
-# Career Kit
+# Career Kit LLM 使用指南
 
-> AI 驱动的职业规划 MCP 服务器。建档、差距分析、路线图、日程表——全程本地运行，数据不离开你的电脑。
+> 本指南帮助 LLM 理解如何使用 Career Kit 的工具，完成职业规划全流程。
 
-## System Directives
+## 核心理念
 
-你是用户的职业规划助手。你的职责是：
-1. 引导用户建立完整的职业档案（who/have/want）
-2. 基于真实市场数据分析差距
-3. 生成可执行的路线图和日程
-4. 追踪进度并动态调整
+Career Kit 是一个**有真实数据源的 AI 职业陪练**。它不只是提供信息，而是：
+- 帮你设计最优路线
+- 细化到每天任务
+- 跟着做、打卡
+- 达成目标
 
-**行为约束**：
-- 不要跳过 intake 直接调用 analyze_gaps
-- 不要在档案不完整时调用 finalize_profile
-- 分析结果必须基于真实数据，不要编造
-- 用户反馈要认真对待，影响后续分析
+## 工作流概览
 
-## Core Concepts
+```
+用户目标 → AI 分析差距 → 设计路线图 → 细化到每天任务 → 用户打卡 → AI 洞察调整 → 达成目标
+```
 
-### 档案（Profile）
-用户的职业档案，包含 5 个 section：
-- `who`：你是谁（姓名、教育、状态）
-- `have`：你有什么（技能、经历、资源）
-- `want`：你想要什么（目标岗位、行业、薪资）
-- `gap`：差距是什么（analyze_gaps 自动生成）
-- `plan`：怎么走（generate_roadmap 自动生成）
+## 工具分类
 
-### 差距分析（Gap Analysis）
-对比用户现状（have）和目标（want），结合真实市场数据，输出：
-- 匹配度评分（0-100）
-- 技能差距（显性 + 隐性）
-- 简历优化建议
-- 面试准备指南
-- 优先行动项
+### 1. 建档工具
 
-### 路线图（Roadmap）
-基于差距分析生成的分阶段计划：
-- 阶段类型：learn/project/intern/research
-- 每阶段有量化 KPI 和简历价值
-- 拆成里程碑和每日任务
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `start_session` | 初始化会话 | 用户开始新规划时 |
+| `intake` | 填充档案 | 逐步填充 who/have/want |
+| `finalize_profile` | 确认档案 | 档案完整后 |
+| `import_jd` | 导入 JD | 有目标岗位时 |
 
-### 日程（Schedule）
-路线图拆解为每日时间块：
-- 时间块排程，每天不超过 8 小时
-- 高优先级任务排前面
-- 每隔 3 天安排复习日（间隔复习）
-- 支持导出 ICS 日历文件
+### 2. 分析工具
 
-### 进度追踪（Progress Tracking）
-记录执行情况，分析偏差，自动调整：
-- 签到模式：完成了什么、花了多少时间、遇到什么阻碍、当前士气
-- 偏差分析：实际进度 vs 计划进度
-- 自动重排：落后时建议调整方案
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `analyze_gaps` | 差距分析 | 档案确认后 |
+| `save_gap_analysis` | 保存分析结果 | LLM 分析完成后 |
+| `search_market` | 搜索市场信息 | 需要补充数据时 |
 
-### 企业库（Company Library）
-社区驱动的企业招聘数据源：
-- 接口统一：所有 scraper 实现相同的 CompanyScraper 接口
-- 数据持久化：抓取结果自动写入 dev/knowledge/
-- 可插拔：新增 scraper 只需实现接口 + 注册配置
+### 3. 规划工具
 
-### 知识库（Knowledge Base）
-本地积累的求职资料：
-- `jds/`：岗位描述（从企业官网抓取）
-- `interviews/`：面试经验（从牛客/小红书抓取）
-- `resumes/`：参考简历（成功案例）
-- `market/`：市场数据（薪资、技能图谱）
-- `feedback/`：用户反馈（分析准不准、规划有没有用）
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `generate_roadmap` | 生成路线图 | 差距分析完成后 |
+| `save_roadmap` | 保存路线图 | LLM 生成完成后 |
+| `generate_schedule` | 生成日程 | 路线图保存后 |
+| `save_schedule` | 保存日程 | LLM 生成完成后 |
 
-## Tools Reference
+### 4. 任务管理工具
 
-### 建档阶段
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `generate_tasks` | 从路线图生成任务 | 路线图和日程保存后 |
+| `get_today_tasks` | 获取今日任务 | 用户想查看任务时 |
+| `checkin_task` | 打卡任务 | 用户完成任务时 |
 
-| Tool | 何时调用 | 参数 |
-|------|----------|------|
-| `start_session` | 用户开始新的职业规划 | 无 |
-| `intake` | 逐步填充档案信息 | section: who/have/want, data: JSON |
-| `finalize_profile` | 档案信息完整时 | 无 |
-| `parse_resume` | 用户上传简历 | file_path: 简历文件路径 |
-| `import_jd` | 用户提供目标 JD | jd_text: JD 文本 |
-| `import_jd_file` | 用户上传 JD 文件 | file_path: JD 文件路径 |
+### 5. 洞察工具
 
-### 分析规划阶段
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `trigger_insight` | 触发洞察分析 | 阶段完成/事件/定期 |
+| `apply_insight` | 应用洞察结果 | LLM 分析完成后 |
+| `get_progress` | 查看进度 | 用户想了解进度时 |
+| `suggest_adjustment` | 提出调整建议 | 有超期任务时 |
 
-| Tool | 何时调用 | 参数 |
-|------|----------|------|
-| `analyze_gaps` | 档案完成后 | 无（读档案） |
-| `save_gap_analysis` | LLM 分析完成后 | gap_json: JSON 字符串 |
-| `generate_roadmap` | 差距分析完成后 | 无（读差距） |
-| `save_roadmap` | LLM 生成路线图后 | roadmap_json: JSON 字符串 |
-| `generate_schedule` | 路线图完成后 | scope: today/this_week/this_month |
-| `save_schedule` | LLM 生成日程后 | schedule_json: JSON 字符串 |
-| `export_ics` | 需要导出日历 | start_date: YYYY-MM-DD（可选） |
+### 6. 状态查询工具
 
-### 持续运行阶段
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `get_workflow_status` | 获取工作流状态 | 不确定下一步时 |
 
-| Tool | 何时调用 | 参数 |
-|------|----------|------|
-| `track_progress` | 用户汇报进度 | report: 自然语言 |
-| `save_checkin` | LLM 分析签到后 | checkin_json: JSON 字符串 |
-| `view_progress` | 查看整体进度 | 无 |
-| `search_market` | 搜索市场信息 | query: 搜索内容 |
-| `save_feedback` | 用户提供反馈 | feedback: 反馈内容, category: 类别 |
+## 完整工作流示例
 
-### 企业库
-
-| Tool | 何时调用 | 参数 |
-|------|----------|------|
-| `list_company_jobs` | 查看可用企业 | 无 |
-| `fetch_company_jobs` | 搜索企业岗位 | company: 企业ID, params: JSON |
-| `fetch_jd_detail` | 获取岗位详情 | url: 岗位URL, company: 企业ID（可选） |
-
-详见：[企业库文档](src/scrapers/README.md)
-
-### 计划管理
-
-| Tool | 何时调用 | 参数 |
-|------|----------|------|
-| `import_plan` | 导入已有计划 | file_path: 计划文件路径 |
-| `compare_plan_versions` | 对比新旧计划 | new_plan: JSON 字符串 |
-| `replace_plan` | 完全替换计划 | new_plan: JSON 字符串 |
-| `merge_plan` | 合并计划 | new_plan: JSON 字符串 |
-| `list_plan_versions` | 查看版本历史 | 无 |
-| `restore_plan` | 恢复到指定版本 | version: 版本号 |
-
-## Workflow
-
-### 标准流程
+### 阶段 1：建档
 
 ```
 1. start_session()
-2. intake(section="who", data='{"name":"张三", "education":"..."}')
-3. intake(section="have", data='{"skills":["Python", "React"], ...}')
-4. intake(section="want", data='{"target_role":"AI Agent 工程师", ...}')
+2. intake(section="who", data='{"name":"张三", "education":"计算机本科"}')
+3. intake(section="have", data='{"skills":["Python", "React"], "experience":"1年前端"}')
+4. intake(section="want", data='{"target_role":"AI Agent 工程师", "salary":"20k-30k"}')
 5. finalize_profile()
-6. analyze_gaps()
-7. [LLM 分析，调用 save_gap_analysis()]
-8. generate_roadmap()
-9. [LLM 生成路线图，调用 save_roadmap()]
-10. generate_schedule(scope="this_week")
-11. [LLM 生成日程，调用 save_schedule()]
-12. export_ics()
 ```
 
-### 进度追踪流程
+### 阶段 2：分析
 
 ```
-1. track_progress(report="今天把 React 教程刷完了")
-2. [LLM 分析进度，调用 save_checkin()]
-3. [如果需要调整] generate_schedule(scope="this_week")
+1. analyze_gaps()
+2. search_market(query="AI Agent 工程师 技能要求")
+3. save_gap_analysis(gap_json='{"match_score":65, "skill_gaps":[...]}')
 ```
 
-### 反馈循环流程
+### 阶段 3：规划
 
 ```
-1. save_feedback(feedback="你说我缺系统设计，但面试没问", category="analysis_accuracy")
-2. [下次分析时，系统会检索历史反馈，调整分析策略]
+1. generate_roadmap()
+2. save_roadmap(roadmap_json='{"phases":[...]}')
+3. generate_schedule(scope="this_week")
+4. save_schedule(schedule_json='{"schedule":[...]}')
 ```
 
-## Glossary
-
-| 术语 | 含义 |
-|------|------|
-| 档案（Profile） | 用户的职业信息集合，包含 who/have/want/gap/plan 5 个 section |
-| 差距分析（Gap Analysis） | 对比现状和目标，找出技能、经验、简历等方面的差距 |
-| 路线图（Roadmap） | 分阶段的职业发展计划，每阶段有明确目标和 KPI |
-| 日程（Schedule） | 路线图拆解为每日时间块的具体安排 |
-| 签到（Check-in） | 用户汇报进度的方式，包含完成情况、时间、阻碍、士气 |
-| SOP | 标准操作流程（已重构为方法论 YAML），驱动分析和规划的模板 |
-| ATS | Applicant Tracking System，简历筛选系统 |
-| 企业库 | 社区驱动的企业招聘数据源集合 |
-| 知识库 | 本地积累的求职资料（JD、面经、简历、市场数据） |
-| 反馈循环 | 用户反馈 → 持久化 → 影响下次分析的闭环机制 |
-
-## Example Dialogue
-
-### 示例 1：建档
+### 阶段 4：任务管理
 
 ```
-用户：我是计算机应届生，想在12月前拿到前端offer
-
-助手：[调用 start_session]
-      收到！我来帮你做职业规划。首先，我需要了解你的情况。
-
-      [调用 intake(section="who", data='{"status":"应届生", "education":"计算机本科"}')]
-      好的，已记录你的基本信息。
-
-      现在告诉我，你目前会哪些技能？做过什么项目？
-
-用户：我会 React、Vue，做过一个电商平台前端
-
-助手：[调用 intake(section="have", data='{"skills":["React", "Vue"], "projects":["电商平台前端"]}')]
-      已记录。
-
-      你的目标是什么公司？什么岗位？
-
-用户：想进字节跳动，做前端开发
-
-助手：[调用 intake(section="want", data='{"target_company":"字节跳动", "target_role":"前端开发", "deadline":"2026-12"}')]
-      好的，档案已建立。
-
-      [调用 finalize_profile()]
-      档案已确认。现在开始分析差距。
+1. generate_tasks()
+2. get_today_tasks()
+3. checkin_task(task_id="task_001", status="completed", notes="提前完成")
 ```
 
-### 示例 2：差距分析
+### 阶段 5：洞察调整
 
 ```
-助手：[调用 analyze_gaps]
-      正在分析你的档案...
-
-      [系统返回方法论上下文，LLM 按照方法论指引搜索市场数据并分析差距]
-
-      [调用 save_gap_analysis(gap_json='{"match_score":65, "skill_gaps":[...], ...}')]
-      分析完成！
-
-      匹配度：65/100（部分匹配）
-
-      主要差距：
-      1. 缺少 TypeScript（字节前端必备）
-      2. 项目经验不够深入（需要系统设计能力）
-      3. 简历缺少量化成果
-
-      建议先补充 TypeScript，然后深化项目经验。
+1. trigger_insight(trigger_type="proactive")
+2. apply_insight(insight_json='{"status":"on_track", ...}')
 ```
 
-### 示例 3：进度追踪
+## 返回值格式
 
-```
-用户：今天把 TypeScript 基础教程刷完了
+所有工具都返回 JSON 对象，包含以下字段：
 
-助手：[调用 track_progress(report="今天把 TypeScript 基础教程刷完了")]
-      [LLM 分析进度]
-
-      [调用 save_checkin(checkin_json='{"completed_tasks":["TypeScript 基础"], "progress_pct":30, ...}')]
-      进度已记录！
-
-      当前进度：30%
-      比计划提前 1 天，继续保持！
-
-      下一步建议：开始用 TypeScript 重构你的电商平台项目。
+```json
+{
+  "message": "消息内容",
+  "next_steps": ["下一步工具1", "下一步工具2"],
+  "context": {"phase": "当前阶段", "其他数据": "..."}
+}
 ```
 
-## Links
+## 错误处理
 
-- GitHub: https://github.com/your-repo/career-kit
-- 企业库贡献指南: src/scrapers/CONTRIBUTING.md
-- 技术架构方案: dev/architecture.md
+当工具返回错误时，格式如下：
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "错误描述",
+    "details": {}
+  }
+}
+```
+
+常见错误代码：
+- `MISSING_DATA`：缺少必要数据
+- `INVALID_JSON`：JSON 格式错误
+- `INVALID_SECTION`：无效的 section 名称
+
+## 最佳实践
+
+1. **先调用 `get_workflow_status`**：了解当前状态，避免重复操作
+2. **按 `next_steps` 提示操作**：工具返回的 `next_steps` 是推荐的下一步
+3. **保存中间结果**：`save_*` 工具用于保存 LLM 生成的内容
+4. **使用 `search_market` 补充数据**：在分析和规划前，先搜索真实市场数据
+5. **定期调用 `trigger_insight`**：保持进度追踪和调整
+
+## 常见场景
+
+### 场景 1：用户说"我想转行"
+
+```
+1. start_session()
+2. intake(who/have/want)
+3. finalize_profile()
+4. analyze_gaps()
+5. save_gap_analysis()
+6. generate_roadmap()
+7. save_roadmap()
+8. generate_schedule()
+9. save_schedule()
+10. generate_tasks()
+```
+
+### 场景 2：用户说"今天任务完成了"
+
+```
+1. get_today_tasks()
+2. checkin_task(task_id="task_001", status="completed")
+```
+
+### 场景 3：用户说"我拿到面试了"
+
+```
+1. trigger_insight(trigger_type="event", event_description="拿到大厂面试")
+2. apply_insight(insight_json='{"status":"need_adjustment", ...}')
+```
+
+### 场景 4：用户说"进度太慢了"
+
+```
+1. get_progress()
+2. trigger_insight(trigger_type="proactive")
+3. apply_insight(insight_json='{"status":"behind", ...}')
+```
+
+## 注意事项
+
+1. **不要跳过步骤**：每个阶段都有前置条件
+2. **保存重要数据**：使用 `save_*` 工具保存 LLM 生成的内容
+3. **处理错误**：检查返回值中的 `error` 字段
+4. **使用 `get_workflow_status`**：当不确定下一步时，先调用此工具
+5. **尊重用户选择**：调整建议需要用户确认
+
+## 技术细节
+
+- 所有数据存储在本地 `~/.career-kit/`
+- 支持多档案（通过 `name` 参数）
+- 档案版本控制（通过 `version` 字段）
+- 学习轨迹记录（通过 `journey` 字段）
+
+---
+
+*本指南基于 Career Kit Phase 2 版本*
