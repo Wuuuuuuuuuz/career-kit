@@ -13,6 +13,33 @@
 #   params: 支持的搜索参数（可选，供 LLM 参考）
 
 scrapers:
+  boss:
+    name: BOSS直聘
+    module: boss.scraper
+    class: Scraper
+    description: BOSS直聘（zhipin.com），需要首次登录后缓存登录态
+    url_patterns:
+      - "zhipin.com"
+    params:
+      keyword:
+        description: 搜索关键词（如 "Python"、"前端"、"AI"）
+        required: true
+      city:
+        description: 城市名（如 "北京"、"上海"、"全国"）或城市代码
+        required: false
+      experience:
+        description: 经验要求（如 "1-3年"、"3-5年"、"不限"）
+        required: false
+      degree:
+        description: 学历要求（如 "本科"、"硕士"、"不限"）
+        required: false
+      salary:
+        description: 薪资范围（如 "15-25K"、"30-50K"）
+        required: false
+      limit:
+        description: 返回数量上限，默认 20
+        required: false
+
   bytedance:
     name: 字节跳动
     module: bytedance.scraper

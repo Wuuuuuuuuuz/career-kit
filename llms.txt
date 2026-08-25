@@ -110,6 +110,8 @@
 | `fetch_company_jobs` | 搜索企业岗位 | company: 企业ID, params: JSON |
 | `fetch_jd_detail` | 获取岗位详情 | url: 岗位URL, company: 企业ID（可选） |
 
+详见：[企业库文档](src/scrapers/README.md)
+
 ### 计划管理
 
 | Tool | 何时调用 | 参数 |
