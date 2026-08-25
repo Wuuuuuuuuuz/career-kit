@@ -125,11 +125,11 @@ def start_session() -> str:
 
     工作流程：start_session → intake(who) → intake(have) → intake(want) → finalize_profile
     """
-    return {
-        "message": get_welcome_message(),
-        "next_steps": ["intake"],
-        "context": {"phase": "session_started"},
-    }
+    return (
+        f"{get_welcome_message()}\n\n"
+        "下一步：请调用 intake 工具填充档案信息。\n"
+        '示例：intake(section="who", data=\'{"name":"张三", "education":"计算机本科"}\')'
+    )
 
 
 @mcp.tool()
@@ -206,14 +206,10 @@ def finalize_profile() -> str:
     profile.summary = "；".join(parts) if parts else "（档案为空）"
     save_profile(profile)
 
-    return {
-        "message": (
-            f"档案已确认。\n\n摘要：{profile.summary}\n\n"
-            "可以开始分析差距了，请调用 analyze_gaps。"
-        ),
-        "next_steps": ["analyze_gaps"],
-        "context": {"phase": "profile_finalized", "summary": profile.summary},
-    }
+    return (
+        f"档案已确认。\n\n摘要：{profile.summary}\n\n"
+        "可以开始分析差距了，请调用 analyze_gaps。"
+    )
 
 
 def _summarize_dict(d: dict) -> str:
@@ -1480,28 +1476,30 @@ def get_workflow_status() -> str:
     completed_tasks = len([t for t in profile.tasks if t.status == "completed"])
     overdue_tasks = len([t for t in profile.tasks if t.is_overdue()])
 
-    return {
-        "phase": phase,
-        "completed_steps": completed_steps,
-        "next_step": next_step,
-        "task_stats": {
-            "total": total_tasks,
-            "completed": completed_tasks,
-            "overdue": overdue_tasks,
-        },
-        "recent_adjustments": [
-            {"timestamp": a.timestamp, "reason": a.reason}
-            for a in (profile.adjustments or [])[-3:]
-        ],
-        "workflow_guide": {
-            "profile_building": "start_session → intake(who/have/want) → finalize_profile",
-            "analysis": "analyze_gaps → save_gap_analysis",
-            "planning": "generate_roadmap → save_roadmap",
-            "scheduling": "generate_schedule → save_schedule",
-            "task_management": "generate_tasks → get_today_tasks",
-            "execution": "checkin_task → trigger_insight → apply_insight",
-        },
-    }
+    lines = []
+    lines.append(f"## 当前状态：{phase}")
+    lines.append("")
+    lines.append(f"**下一步**：{next_step}")
+    lines.append("")
+    lines.append("### 已完成步骤")
+    for step in completed_steps:
+        lines.append(f"- ✅ {step}")
+    lines.append("")
+    lines.append("### 任务统计")
+    lines.append(f"- 总计：{total_tasks} 个")
+    lines.append(f"- 已完成：{completed_tasks} 个")
+    if overdue_tasks > 0:
+        lines.append(f"- 超期：{overdue_tasks} 个")
+    lines.append("")
+    lines.append("### 工作流指南")
+    lines.append("- 建档：start_session → intake(who/have/want) → finalize_profile")
+    lines.append("- 分析：analyze_gaps → save_gap_analysis")
+    lines.append("- 规划：generate_roadmap → save_roadmap")
+    lines.append("- 日程：generate_schedule → save_schedule")
+    lines.append("- 任务：generate_tasks → get_today_tasks")
+    lines.append("- 执行：checkin_task → trigger_insight → apply_insight")
+
+    return "\n".join(lines)
 
 
 def main():
