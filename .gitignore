@@ -9,3 +9,10 @@ build/
 dev/
 data/cache/
 .career-kit/
+.claude/
+.opencode/
+.mcp.json
+screenshots/
+scripts/
+src/scrapers/*/cache/
+src/tools/__pycache__/

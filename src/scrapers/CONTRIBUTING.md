@@ -99,11 +99,11 @@ class Scraper(CompanyScraper):
 
 ## 抓取方式选择
 
-根据目标网站选择合适的抓取方式：
+根据目标网站选择合适的抓取方式(实现不需要追求优雅，欢迎您的任何提交)：
 
 ### 方式 1：httpx 直调 API（推荐）
 
-适用于有公开 API 的网站。
+适用于拿到 API 的网站。
 
 ```python
 def _fetch_jobs(self, keyword, city, limit):
