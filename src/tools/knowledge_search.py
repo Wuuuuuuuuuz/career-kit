@@ -7,10 +7,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-KNOWLEDGE_DIR = Path(__file__).parent.parent.parent / "data" / "knowledge"
+from ..paths import KNOWLEDGE_DIR
 
 SUPPORTED_EXTENSIONS = {".md", ".txt", ".json"}
 

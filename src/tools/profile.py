@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 from typing import Any
 
 from ..models import CareerProfile
-
-# 优先级：环境变量 > 当前工作目录/.career-kit
-PROFILE_DIR = Path(os.environ.get("CAREER_KIT_DATA_DIR", Path.cwd() / ".career-kit"))
+from ..paths import PROFILE_DIR
 
 
 def load_profile(name: str = "default") -> CareerProfile:

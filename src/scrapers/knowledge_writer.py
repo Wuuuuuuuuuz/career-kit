@@ -9,11 +9,9 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
-# 知识库根目录
-KNOWLEDGE_DIR = Path(__file__).parent.parent.parent / "data" / "knowledge"
+from ..paths import KNOWLEDGE_DIR
 
 
 def write_to_knowledge(

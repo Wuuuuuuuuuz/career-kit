@@ -41,9 +41,9 @@ graph TB
     end
 
     subgraph "数据层"
-        L[data/knowledge/]
-        M[data/cache/]
-        N[.career-kit/profile.json]
+        L[~/.career-kit/knowledge/]
+        M[~/.career-kit/cache/]
+        N[~/.career-kit/default.json]
         P[src/dashboard.html]
     end
 
@@ -136,10 +136,12 @@ trigger_insight() → 分析进度 → apply_insight() → 应用调整
 
 | 组件 | 职责 | 路径 |
 |------|------|------|
-| 知识库 | scraper 自动写入 + 用户积累的求职资料 | data/knowledge/ |
-| 缓存 | 爬虫抓取结果缓存 | data/cache/ |
-| 档案 | 用户职业档案（含 tasks/checkins/adjustments） | ~/.career-kit/profile.json |
-| 仪表盘 | 静态前端 | src/dashboard.html |
+| 知识库 | scraper 自动写入 + 用户积累的求职资料 | ~/.career-kit/knowledge/ |
+| 缓存 | 爬虫抓取结果缓存 | ~/.career-kit/cache/ |
+| 档案 | 用户职业档案（含 tasks/checkins/adjustments） | ~/.career-kit/default.json |
+| 仪表盘 | 静态前端（export_dashboard 一次性生成） | src/dashboard.html |
+
+> 数据根目录统一定义在 `src/paths.py`，环境变量 `CAREER_KIT_DATA_DIR` 可覆盖（测试/CI 用）。
 
 ---
 

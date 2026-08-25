@@ -259,7 +259,7 @@
 理由：
 1. WAF 要求真实浏览器指纹，Playwright 可直接通过
 2. 详情页 SSR 渲染，DOM 提取稳定
-3. 数据类型：面经（interviews），写入 `data/knowledge/interviews/nowcoder/`
+3. 数据类型：面经（interviews），写入 `~/.career-kit/knowledge/interviews/nowcoder/`
 
 ---
 

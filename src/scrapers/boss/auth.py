@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-AUTH_STATE_PATH = Path(__file__).parent / "cache" / "auth" / "state.json"
+from ...paths import CACHE_DIR
+
+AUTH_STATE_PATH = CACHE_DIR / "boss" / "auth" / "state.json"
 
 
 def load_cookies() -> dict[str, str]:

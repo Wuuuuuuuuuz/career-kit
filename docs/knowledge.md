@@ -2,15 +2,19 @@
 
 > Career Kit 本地知识库结构说明
 
-## 目录结构
+## 位置
+
+知识库属于**用户自有数据**，存放在用户主目录：
 
 ```
-data/knowledge/
+~/.career-kit/knowledge/
 ├── resumes/       # 参考简历
-├── jds/           # 收集的 JD
-├── interviews/    # 面经
+├── jds/           # 收集的 JD（含 scraper 自动写入）
+├── interviews/    # 面经（含 scraper 自动写入）
 └── market/        # 市场数据
 ```
+
+路径常量统一定义在 `src/paths.py`；仓库内的 `data/knowledge/` 已停用，仅作测试样例存放点。
 
 ## 目录说明
 
@@ -61,6 +65,6 @@ data/knowledge/
 ## 与企业库的关系
 
 - **企业库**（`src/scrapers/`）：自动抓取的企业数据
-- **知识库**（`data/knowledge/`）：用户积累的求职资料
+- **知识库**（`~/.career-kit/knowledge/`）：用户积累的求职资料
 
 两者互补，系统会优先检索知识库，然后用企业库补充。

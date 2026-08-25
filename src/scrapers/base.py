@@ -14,10 +14,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any
 
 from ..tools.cache import CacheManager, cache_key as _cache_key_fn
+from ..paths import CACHE_DIR
 
 
 class CompanyScraper(ABC):
@@ -65,8 +65,7 @@ class CompanyScraper(ABC):
     def _make_cache(self, namespace: str) -> CacheManager:
         """创建一个缓存实例，namespace 用于隔离不同类型的缓存。"""
         ttl = self.detail_cache_ttl if namespace == "detail" else self.search_cache_ttl
-        # 缓存目录统一在 data/cache/ 下，不在 src/ 下
-        cache_dir = Path(__file__).parent.parent.parent / "data" / "cache" / self.COMPANY_SLUG / namespace
+        cache_dir = CACHE_DIR / self.COMPANY_SLUG / namespace
         return CacheManager(backend="file", ttl=ttl, cache_dir=cache_dir)
 
     @staticmethod
