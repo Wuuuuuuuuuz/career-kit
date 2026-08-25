@@ -109,6 +109,16 @@ AI 在以下情况主动提出调整建议：
 
 ## 安装
 
+### 从 GitHub 克隆
+
+```bash
+git clone https://github.com/Wuuuuuuuuuz/career-kit.git
+cd career-kit
+pip install -e .
+```
+
+### 从 PyPI 安装（待发布）
+
 ```bash
 pip install career-kit
 ```
@@ -127,9 +137,32 @@ pip install career-kit
 }
 ```
 
+或者使用本地路径：
+
+```json
+{
+  "mcpServers": {
+    "career-kit": {
+      "command": "python",
+      "args": ["-m", "src.server"],
+      "cwd": "/path/to/career-kit"
+    }
+  }
+}
+```
+
 ## 在 Cursor / Windsurf / Continue 中使用
 
 Career Kit 使用标准 MCP 协议，任何 MCP 客户端都能连接。
+
+## 文档
+
+- [LLM 使用指南](llms.txt)：工作流、工具分类、常见场景
+- [工作流详解](docs/workflow.md)：完整工作流、前置条件、输入输出
+- [企业库](docs/scrapers.md)：已收录企业、数据源说明
+- [工具总览](docs/tools.md)：MCP 工具列表、分类说明
+- [知识库](docs/knowledge.md)：目录结构、文件格式
+- [示例](docs/examples/README.md)：完整工作流示例、场景示例
 
 ## 隐私
 
