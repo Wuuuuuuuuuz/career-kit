@@ -17,3 +17,4 @@ scripts/
 src/scrapers/*/cache/
 src/tools/__pycache__/
 .pytest_cache/
+tests/career-kit-test/
