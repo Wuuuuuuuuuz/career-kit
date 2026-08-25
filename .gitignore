@@ -16,3 +16,4 @@ screenshots/
 scripts/
 src/scrapers/*/cache/
 src/tools/__pycache__/
+.pytest_cache/
