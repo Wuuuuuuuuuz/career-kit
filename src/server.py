@@ -1,8 +1,17 @@
 """Career Kit MCP 服务器——入口。"""
 
 import json
+import warnings
 from pathlib import Path
 from typing import Any
+
+# 抑制 pydantic_settings 对 mcp 内部 Settings 模型的误报告警（OBS-002）
+# 该告警来自 FastMCP 内部 lifespan 字段的前向引用，不影响功能
+try:
+    from pydantic_settings.exceptions import IncompleteFieldDefinitionWarning
+    warnings.filterwarnings("ignore", category=IncompleteFieldDefinitionWarning)
+except ImportError:
+    pass
 
 from mcp.server.fastmcp import FastMCP
 
@@ -618,13 +627,14 @@ def search_knowledge(query: str) -> str:
     - 分析前查找已积累的同背景案例、目标公司 JD
     - 查询之前抓取过的面经内容
 
-    无结果时的正确做法：
-    - 调用 fetch_company_jobs 抓取实时数据（抓取结果会自动存入知识库）
-    - 不要基于自身知识编造市场数据
-
     Args:
         query: 搜索关键词
             示例："AI Agent 面经"、"字节跳动 JD"、"双非 转 AI"
+
+    Returns:
+        每条含来源文件路径、相关度、内容预览。
+        无结果时返回下一步指引（用 fetch_company_jobs 抓取）——
+        此时不要基于自身知识编造市场数据。
     """
     from .tools.knowledge_search import search_knowledge as do_search
 
@@ -822,18 +832,38 @@ def restore_plan(version: int) -> str:
 
 @mcp.tool()
 def list_company_jobs() -> str:
-    """列出所有已注册的企业招聘数据源。
+    """列出所有已注册的企业招聘数据源及其完整使用指南。
 
-    返回每个企业支持的搜索参数，方便后续调用 fetch_company_jobs。
+    何时调用：第一次需要真实岗位/面经数据时，必须先调用本工具，
+    了解每个数据源能搜什么、参数怎么传、返回什么字段，再调 fetch_company_jobs。
+
+    Returns:
+        每个企业源的支持参数、调用示例、返回字段说明、注意事项。
     """
     scrapers = list_scrapers()
 
     if not scrapers:
         return "暂无已注册的企业数据源。社区贡献请参考 scrapers/ 目录。"
 
+    # 各源的输出字段与注意事项（与 scraper 实现对齐）
+    guides: dict[str, dict[str, str]] = {
+        "boss": {
+            "output": "title（岗位名）、url、location、salary（薪资范围）、summary",
+            "notes": "需要登录态；首次使用前需运行 python -m src.scrapers.boss.login 完成扫码登录。失败时错误信息会说明原因。",
+        },
+        "bytedance": {
+            "output": "title（岗位名）、url（详情页链接）、location、department、summary、recruit_type（社招/校招/实习）",
+            "notes": "无需登录。salary 通常为空（字节不公开薪资）。校招加 portal=campus。",
+        },
+        "nowcoder": {
+            "output": "title（面经标题）、url（面经链接）、company、position、snippet（内容摘要）",
+            "notes": "面经数据源，用于面试准备而非岗位搜索。详情全文用 fetch_jd_detail 获取。",
+        },
+    }
+
     lines = ["【已注册企业招聘数据源】\n"]
     for s in scrapers:
-        lines.append(f"**{s['name']}**（ID: {s['id']}）")
+        lines.append(f"## {s['name']}（ID: {s['id']}）")
         if s.get("description"):
             lines.append(f"  {s['description']}")
 
@@ -844,24 +874,43 @@ def list_company_jobs() -> str:
                 req = "（必填）" if pinfo.get("required") else "（可选）"
                 desc = pinfo.get("description", "")
                 lines.append(f"    - {pname}{req}: {desc}")
+
+        guide = guides.get(s["id"], {})
+        if guide.get("output"):
+            lines.append(f"  返回字段：{guide['output']}")
+        example_params = json.dumps(
+            {p: "..." for p in list(params)[:3]}, ensure_ascii=False
+        )
+        lines.append(f"  调用示例：fetch_company_jobs(company=\"{s['id']}\", params='{example_params}')")
+        if guide.get("notes"):
+            lines.append(f"  注意：{guide['notes']}")
         lines.append("")
 
-    lines.append("调用示例：fetch_company_jobs(company=\"bytedance\", params='{\"keyword\":\"AI Agent\"}')")
+    lines.append("---")
+    lines.append("使用原则：")
+    lines.append("1. params 只传上表列出的参数，不要自造参数名")
+    lines.append("2. 返回的 url 可直接传给 fetch_jd_detail 获取全文")
+    lines.append("3. 搜索失败时按错误信息处理，不要编造岗位数据")
     return "\n".join(lines)
 
 
 @mcp.tool()
 def fetch_company_jobs(company: str, params: str = "{}") -> str:
-    """搜索指定企业的岗位。
+    """搜索指定企业的岗位或面经（实时抓取真实数据）。
 
-    何时调用：用户想查看某个企业的招聘信息时调用。
-    先调用 list_company_jobs 查看可用企业和支持的参数。
+    何时调用：需要真实岗位数据（差距分析、路线图、薪资行情）或面经数据时调用。
+    前置条件：先调用 list_company_jobs 查看该企业支持的参数，params 只传列出的参数。
 
     Args:
         company: 企业 ID（通过 list_company_jobs 获取）
             示例：bytedance
         params: 搜索参数 JSON 字符串（各企业支持的参数不同）
             示例：'{"keyword":"AI Agent", "city":"北京"}'
+
+    Returns:
+        每行一个岗位：标题 | 地点 | 薪资（如有）、链接、内容摘要。
+        boss/bytedance 返回岗位（含薪资范围）；nowcoder 返回面经。
+        失败时返回错误原因和恢复建议——此时如实告知用户，不要编造数据。
     """
     try:
         params_dict = json.loads(params) if params else {}
@@ -878,14 +927,26 @@ def fetch_company_jobs(company: str, params: str = "{}") -> str:
         return error_response(
             "ANALYSIS_FAILED",
             result["error"],
-            {"available": result.get("available", [])},
+            {
+                "available": result.get("available", []),
+                "recovery": (
+                    "可尝试：1) 换关键词重试 2) 换其他企业数据源 "
+                    "3) 如确认数据不可用，如实告知用户，不要编造岗位数据"
+                ),
+            },
         )
 
     count = result["count"]
     company_name = result["company"]
 
     if count == 0:
-        return f"「{company_name}」未找到匹配的岗位。"
+        return (
+            f"「{company_name}」未找到匹配的岗位。\n\n"
+            "建议：1) 换更宽泛的关键词重试 2) 尝试其他企业数据源（list_company_jobs 查看）"
+        )
+
+    # 部分失败的警告信息
+    warnings_list = result.get("warnings", [])
 
     lines = [f"【{company_name}】找到 {count} 个岗位：\n"]
     for i, job in enumerate(result["results"], 1):
@@ -893,15 +954,23 @@ def fetch_company_jobs(company: str, params: str = "{}") -> str:
         location = job.get("location", "")
         salary = job.get("salary", "")
         url = job.get("url", "")
-        summary = job.get("summary", "")
 
         loc_str = f" | {location}" if location else ""
         sal_str = f" | {salary}" if salary else ""
         lines.append(f"{i}. **{title}**{loc_str}{sal_str}")
         if url:
             lines.append(f"   链接：{url}")
-        if summary:
-            lines.append(f"   {summary[:100]}")
+        # 兼容 JD 类（summary）和面经类（snippet）字段名
+        preview = job.get("summary") or job.get("snippet") or ""
+        if preview:
+            lines.append(f"   {preview[:100]}")
+        lines.append("")
+
+    if warnings_list:
+        lines.append("---")
+        lines.append("⚠️ 部分数据获取失败：")
+        for w in warnings_list:
+            lines.append(f"   - {w}")
         lines.append("")
 
     lines.append("获取岗位详情：fetch_jd_detail(url=\"具体岗位URL\")")
@@ -911,11 +980,18 @@ def fetch_company_jobs(company: str, params: str = "{}") -> str:
 
 @mcp.tool()
 def fetch_jd_detail(url: str, company: str = "") -> str:
-    """获取岗位详情（JD 全文）。
+    """获取岗位详情或面经全文（JD 完整描述、任职要求）。
+
+    何时调用：fetch_company_jobs 结果中某个岗位/面经需要深入分析时调用。
+    url 必须来自 fetch_company_jobs 的返回结果。
 
     Args:
-        url: 岗位详情页 URL
-        company: 企业 ID（可选，不填则自动尝试所有已注册的 Scraper）
+        url: 岗位详情页 URL（来自 fetch_company_jobs 结果）
+        company: 企业 ID（可选，不填则自动按 URL 匹配 Scraper）
+
+    Returns:
+        岗位：标题、公司、地点、薪资（如有）、岗位描述全文、任职要求。
+        面经：标题、面试问题与经验全文。
     """
     result = get_job_detail(url, company if company else None)
 

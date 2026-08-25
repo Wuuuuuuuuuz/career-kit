@@ -392,7 +392,7 @@ def main():
     tests = [
         test_sop_config_loading,
         test_sop_execution,
-        test_data_source,
+        test_knowledge_search,
         test_sop_with_retrieval,
         test_build_sop_prompt,
         test_parse_analysis,

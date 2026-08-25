@@ -134,10 +134,17 @@ def get_scraper_for_url(url: str) -> CompanyScraper | None:
 
 
 def _validate_results(results: list[dict[str, Any]], company_name: str) -> list[dict[str, Any]]:
-    """校验搜索结果，补全缺失的必要字段。"""
+    """校验搜索结果，补全缺失的必要字段。
+
+    错误条目（含 "error" 键）原样保留，不做字段装饰——
+    否则内部失败会被伪装成「未知岗位」假数据。
+    """
     validated = []
     for r in results:
         if not isinstance(r, dict):
+            continue
+        if r.get("error"):
+            validated.append(r)
             continue
         if not r.get("title"):
             r["title"] = "未知岗位"
@@ -196,24 +203,38 @@ def search_company_jobs(company: str, **kwargs: Any) -> dict[str, Any]:
     except Exception as e:
         return {"error": f"搜索失败: {e}", "results": []}
 
+    # 分离错误条目和有效结果
+    # scraper 内部失败以 [{"error": "..."}] 形式返回，
+    # 不能当作岗位数据透传（否则显示为「未知岗位」假结果）
+    error_items = [r for r in results if isinstance(r, dict) and r.get("error")]
+    valid_items = [r for r in results if isinstance(r, dict) and not r.get("error")]
+
     # 从 config 补充 company 字段
     scraper_config = _load_config().get("scrapers", {}).get(company, {})
     company_name = scraper_config.get("name", company)
-    for r in results:
+    for r in valid_items:
         r.setdefault("company", company_name)
 
-    # 校验输出
-    results = _validate_results(results, company_name)
+    # 校验输出（仅对有效结果）
+    valid_items = _validate_results(valid_items, company_name)
+
+    # 全部失败：把第一个底层错误上抛，让上层看到真实原因
+    if not valid_items and error_items:
+        return {"error": error_items[0]["error"], "results": []}
 
     # 自动写入知识库
-    if results and not any(r.get("error") for r in results):
-        _auto_write_knowledge(company, results)
+    if valid_items:
+        _auto_write_knowledge(company, valid_items)
 
-    return {
+    resp: dict[str, Any] = {
         "company": company_name,
-        "results": results,
-        "count": len(results),
+        "results": valid_items,
+        "count": len(valid_items),
     }
+    if error_items:
+        # 部分失败：有效结果照常返回，错误作为警告附带上报
+        resp["warnings"] = [r["error"] for r in error_items]
+    return resp
 
 
 def get_job_detail(url: str, company: str | None = None) -> dict[str, Any]:
