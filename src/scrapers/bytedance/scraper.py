@@ -4,21 +4,11 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from typing import Any
 
 import httpx
 
-from ...tools.cache import CacheManager, cache_key
 from ..base import CompanyScraper
-
-# 缓存目录
-CACHE_DIR = Path(__file__).parent / "cache"
-CACHE_DIR.mkdir(exist_ok=True)
-
-# 两种 TTL 的缓存实例
-_search_cache = CacheManager(backend="file", ttl=3600, cache_dir=CACHE_DIR / "search")
-_detail_cache = CacheManager(backend="file", ttl=86400, cache_dir=CACHE_DIR / "detail")
 
 # 城市名称 → 代码映射（常用）
 CITY_MAP: dict[str, str] = {
@@ -72,9 +62,10 @@ class Scraper(CompanyScraper):
         portal = kwargs.get("portal", "experienced")
         limit = kwargs.get("limit", 20)
 
-        # 查缓存
-        key = cache_key(keyword=keyword, city=city, job_type=job_type, portal=portal)
-        cached = _search_cache.get(key)
+        # 查缓存（统一走 base 的 data/cache/ 目录约定）
+        search_cache = self._make_cache("search")
+        key = self._cache_key(keyword=keyword, city=city, job_type=job_type, portal=portal)
+        cached = search_cache.get(key)
         if cached is not None:
             return cached[:limit]
 
@@ -86,7 +77,7 @@ class Scraper(CompanyScraper):
 
         # 缓存成功结果（知识库写入由 loader 自动处理）
         if results and "error" not in results[0]:
-            _search_cache.set(key, results)
+            search_cache.set(key, results)
 
         return results
 
@@ -97,8 +88,9 @@ class Scraper(CompanyScraper):
             return {"error": f"无法从 URL 提取 job_id: {url}"}
 
         # 查缓存
-        key = cache_key(job_id=job_id)
-        cached = _detail_cache.get(key)
+        detail_cache = self._make_cache("detail")
+        key = self._cache_key(job_id=job_id)
+        cached = detail_cache.get(key)
         if cached is not None:
             return cached
 
@@ -134,7 +126,7 @@ class Scraper(CompanyScraper):
 
         # 缓存成功结果（知识库写入由 loader 自动处理）
         if "error" not in result:
-            _detail_cache.set(key, result)
+            detail_cache.set(key, result)
 
         return result
 

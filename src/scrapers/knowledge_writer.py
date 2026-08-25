@@ -66,14 +66,13 @@ def write_to_knowledge(
         filename = _generate_filename(item, company_name)
         filepath = target_dir / filename
 
-        # 添加元数据
-        item["_fetched_at"] = datetime.now().isoformat()
-        item["_source"] = company_name
+        # 添加元数据（写入副本，不污染调用方返回给 LLM 的原始结果）
+        payload = {**item, "_fetched_at": datetime.now().isoformat(), "_source": company_name}
 
         # 写入文件
         try:
             filepath.write_text(
-                json.dumps(item, ensure_ascii=False, indent=2),
+                json.dumps(payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
             count += 1

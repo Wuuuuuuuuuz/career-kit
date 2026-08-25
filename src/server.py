@@ -72,8 +72,8 @@ def get_scrapers_doc() -> str:
 
 @mcp.resource("career-kit://docs/scrapers/{scraper_id}")
 def get_scraper_doc(scraper_id: str) -> str:
-    """特定企业文档：BOSS直聘、字节跳动、牛客网"""
-    path = DOCS_ROOT / "scrapers" / f"{scraper_id}.md"
+    """特定企业使用教程（与 get_scraper_guide 工具同源）"""
+    path = Path(__file__).parent / "scrapers" / scraper_id / "guide.md"
     if not path.exists():
         return f"文档不存在：{scraper_id}"
     return path.read_text(encoding="utf-8")
@@ -831,35 +831,38 @@ def restore_plan(version: int) -> str:
 
 
 @mcp.tool()
+def get_scraper_guide(company: str) -> str:
+    """获取指定企业数据源的完整使用教程。
+
+    何时调用：第一次使用某个数据源前（或在 fetch_company_jobs 报错后）调用，
+    了解该源能搜什么、参数语义、返回字段、登录要求和失败处理。
+
+    Args:
+        company: 企业 ID（通过 list_company_jobs 获取）
+            示例：bytedance
+    """
+    guide_path = Path(__file__).parent / "scrapers" / company / "guide.md"
+    if not guide_path.exists():
+        available = ", ".join(s["id"] for s in list_scrapers()) or "无"
+        return (
+            f"「{company}」没有使用指南或不是已注册的数据源。\n"
+            f"可用数据源：{available}"
+        )
+    return guide_path.read_text(encoding="utf-8")
+
+
+@mcp.tool()
 def list_company_jobs() -> str:
-    """列出所有已注册的企业招聘数据源及其完整使用指南。
+    """列出所有已注册的企业招聘数据源。
 
-    何时调用：第一次需要真实岗位/面经数据时，必须先调用本工具，
-    了解每个数据源能搜什么、参数怎么传、返回什么字段，再调 fetch_company_jobs。
-
-    Returns:
-        每个企业源的支持参数、调用示例、返回字段说明、注意事项。
+    何时调用：第一次需要真实岗位/面经数据时先调用本工具，
+    看有哪些源、各支持什么参数；然后用 get_scraper_guide(company)
+    查看目标源的完整教程（返回字段、示例、注意事项），再调 fetch_company_jobs。
     """
     scrapers = list_scrapers()
 
     if not scrapers:
-        return "暂无已注册的企业数据源。社区贡献请参考 scrapers/ 目录。"
-
-    # 各源的输出字段与注意事项（与 scraper 实现对齐）
-    guides: dict[str, dict[str, str]] = {
-        "boss": {
-            "output": "title（岗位名）、url、location、salary（薪资范围）、summary",
-            "notes": "需要登录态；首次使用前需运行 python -m src.scrapers.boss.login 完成扫码登录。失败时错误信息会说明原因。",
-        },
-        "bytedance": {
-            "output": "title（岗位名）、url（详情页链接）、location、department、summary、recruit_type（社招/校招/实习）",
-            "notes": "无需登录。salary 通常为空（字节不公开薪资）。校招加 portal=campus。",
-        },
-        "nowcoder": {
-            "output": "title（面经标题）、url（面经链接）、company、position、snippet（内容摘要）",
-            "notes": "面经数据源，用于面试准备而非岗位搜索。详情全文用 fetch_jd_detail 获取。",
-        },
-    }
+        return "暂无已注册的企业数据源。社区贡献请参考 src/scrapers/ 目录。"
 
     lines = ["【已注册企业招聘数据源】\n"]
     for s in scrapers:
@@ -875,22 +878,12 @@ def list_company_jobs() -> str:
                 desc = pinfo.get("description", "")
                 lines.append(f"    - {pname}{req}: {desc}")
 
-        guide = guides.get(s["id"], {})
-        if guide.get("output"):
-            lines.append(f"  返回字段：{guide['output']}")
-        example_params = json.dumps(
-            {p: "..." for p in list(params)[:3]}, ensure_ascii=False
-        )
-        lines.append(f"  调用示例：fetch_company_jobs(company=\"{s['id']}\", params='{example_params}')")
-        if guide.get("notes"):
-            lines.append(f"  注意：{guide['notes']}")
+        lines.append(f"  详细用法：get_scraper_guide(company=\"{s['id']}\")")
         lines.append("")
 
     lines.append("---")
-    lines.append("使用原则：")
-    lines.append("1. params 只传上表列出的参数，不要自造参数名")
-    lines.append("2. 返回的 url 可直接传给 fetch_jd_detail 获取全文")
-    lines.append("3. 搜索失败时按错误信息处理，不要编造岗位数据")
+    lines.append("使用原则：params 只传上表列出的参数，不要自造参数名；")
+    lines.append("搜索失败时按错误信息处理，不要编造岗位数据。")
     return "\n".join(lines)
 
 

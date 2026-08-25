@@ -4,11 +4,15 @@
 
 ## 已收录企业
 
-| ID | 名称 | 数据类型 | 状态 | 文档 |
-|----|------|----------|------|------|
-| `boss` | BOSS直聘 | JD | 可用 | [BOSS直聘文档](scrapers/boss.md) |
-| `bytedance` | 字节跳动 | JD | 可用 | [字节跳动文档](scrapers/bytedance.md) |
-| `nowcoder` | 牛客网 | 面经 | 可用 | [牛客网文档](scrapers/nowcoder.md) |
+| ID | 名称 | 数据类型 | 状态 | 使用教程 |
+|----|------|----------|------|----------|
+| `boss` | BOSS直聘 | JD（含薪资） | 可用 | [guide](../src/scrapers/boss/guide.md) |
+| `bytedance` | 字节跳动 | JD（社招/校招） | 可用 | [guide](../src/scrapers/bytedance/guide.md) |
+| `nowcoder` | 牛客网 | 面经 | 可用 | [guide](../src/scrapers/nowcoder/guide.md) |
+
+> 教程的唯一事实源是各 scraper 包内的 `guide.md`，LLM 运行时通过
+> `get_scraper_guide(company)` 工具按需读取同一文件。新增企业时在包内附
+> guide.md 即自动生效（模板见 `_template/guide.md`）。
 
 ## 使用流程
 

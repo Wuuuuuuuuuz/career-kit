@@ -22,8 +22,9 @@
 
 1. 复制模板：`cp -r src/scrapers/_template src/scrapers/{company_name}`
 2. 实现 `search()` 和 `get_detail()` 方法
-3. 在 `src/scrapers/config.yaml` 注册
-4. 提交 PR
+3. 填写包内 `guide.md` 使用教程（LLM 运行时按需读取，缺文件会挂测试）
+4. 在 `src/scrapers/config.yaml` 注册
+5. 提交 PR
 
 详见 [企业库文档](docs/scrapers.md)。
 
