@@ -1,6 +1,6 @@
 """知识库写入器 — 框架自动调用，贡献者无需关心。
 
-将 scraper 抓取的数据自动写入 dev/knowledge/ 目录，
+将 scraper 抓取的数据自动写入 data/knowledge/ 目录，
 实现"抓取即积累"的设计理念。
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 # 知识库根目录
-KNOWLEDGE_DIR = Path(__file__).parent.parent.parent / "dev" / "knowledge"
+KNOWLEDGE_DIR = Path(__file__).parent.parent.parent / "data" / "knowledge"
 
 
 def write_to_knowledge(
