@@ -1088,16 +1088,20 @@ def trigger_insight(trigger_type: str = "proactive", event_description: str = ""
     - 用户报告事件时（trigger_type="event"）
     - 定期检查进度时（trigger_type="proactive"）
 
+    工作流程：
+    1. 调用 trigger_insight 获取分析 prompt
+    2. LLM 根据 prompt 分析用户进度
+    3. LLM 生成洞察 JSON
+    4. 调用 apply_insight(insight_json) 应用结果
+
     Args:
         trigger_type: 触发类型（stage_audit, event, proactive）
         event_description: 事件描述（当 trigger_type 为 event 时必填）
+
+    Returns:
+        包含分析 prompt 和使用说明的字典
     """
-    from .tools.insight import (
-        apply_adjustment,
-        build_insight_prompt,
-        format_insight_report,
-        parse_insight_response,
-    )
+    from .tools.insight import build_insight_prompt
 
     profile = load_profile()
 
@@ -1112,12 +1116,17 @@ def trigger_insight(trigger_type: str = "proactive", event_description: str = ""
     prompt = build_insight_prompt(profile, trigger_type, event_description)
 
     return {
-        "message": "请根据以下 prompt 进行洞察分析：",
+        "message": "洞察分析任务已准备。请根据以下 prompt 进行分析，然后调用 apply_insight 应用结果。",
         "prompt": prompt,
-        "instructions": (
-            "请将 prompt 发送给 LLM，然后调用 apply_insight 将结果应用到档案。\n"
-            "示例：apply_insight(insight_json='{\"status\":\"on_track\", ...}')"
-        ),
+        "output_format": {
+            "status": "on_track|behind|ahead|need_adjustment",
+            "summary": "进度总结",
+            "insights": ["洞察1", "洞察2"],
+            "adjustment_needed": True,
+            "adjustment_reason": "调整原因",
+            "changes": [{"type": "compress_task|add_task", "task_id": "task_001", "details": {}}],
+            "user_message": "给用户的消息"
+        },
         "next_steps": ["apply_insight"],
         "context": {"phase": "insight_ready", "trigger_type": trigger_type},
     }
@@ -1251,6 +1260,111 @@ def suggest_adjustment() -> str:
     lines.append("已自动应用调整。")
 
     return "\n".join(lines)
+
+
+@mcp.tool()
+def get_workflow_status() -> str:
+    """获取当前工作流状态和下一步建议。
+
+    何时调用：
+    - 用户开始对话时，了解当前进度
+    - LLM 不确定下一步该做什么时
+    - 需要查看整体状态时
+
+    Returns:
+        包含当前阶段、已完成步骤、下一步建议的字典
+    """
+    profile = load_profile()
+
+    # 确定当前阶段
+    phase = "not_started"
+    completed_steps = []
+    next_step = "start_session"
+
+    if profile.who or profile.have or profile.want:
+        phase = "profile_building"
+        completed_steps.append("start_session")
+
+        if profile.who:
+            completed_steps.append("intake(who)")
+        if profile.have:
+            completed_steps.append("intake(have)")
+        if profile.want:
+            completed_steps.append("intake(want)")
+
+        if not profile.summary:
+            next_step = "finalize_profile"
+        else:
+            completed_steps.append("finalize_profile")
+
+    if profile.summary:
+        phase = "analysis"
+        if not profile.gap:
+            next_step = "analyze_gaps"
+        else:
+            completed_steps.append("analyze_gaps")
+
+    if profile.gap:
+        phase = "planning"
+        if not profile.plan.get("roadmap"):
+            next_step = "generate_roadmap"
+        else:
+            completed_steps.append("generate_roadmap")
+
+    if profile.plan.get("roadmap"):
+        phase = "scheduling"
+        if not profile.plan.get("schedule"):
+            next_step = "generate_schedule"
+        else:
+            completed_steps.append("generate_schedule")
+
+    if profile.plan.get("schedule"):
+        phase = "task_management"
+        if not profile.tasks:
+            next_step = "generate_tasks"
+        else:
+            completed_steps.append("generate_tasks")
+
+    if profile.tasks:
+        phase = "execution"
+        completed_tasks = [t for t in profile.tasks if t.status == "completed"]
+        overdue_tasks = [t for t in profile.tasks if t.is_overdue()]
+
+        if overdue_tasks:
+            next_step = "trigger_insight(proactive)"
+        elif len(completed_tasks) == len(profile.tasks):
+            phase = "completed"
+            next_step = "目标达成！"
+        else:
+            next_step = "get_today_tasks"
+
+    # 构建状态报告
+    total_tasks = len(profile.tasks)
+    completed_tasks = len([t for t in profile.tasks if t.status == "completed"])
+    overdue_tasks = len([t for t in profile.tasks if t.is_overdue()])
+
+    return {
+        "phase": phase,
+        "completed_steps": completed_steps,
+        "next_step": next_step,
+        "task_stats": {
+            "total": total_tasks,
+            "completed": completed_tasks,
+            "overdue": overdue_tasks,
+        },
+        "recent_adjustments": [
+            {"timestamp": a.timestamp, "reason": a.reason}
+            for a in (profile.adjustments or [])[-3:]
+        ],
+        "workflow_guide": {
+            "profile_building": "start_session → intake(who/have/want) → finalize_profile",
+            "analysis": "analyze_gaps → save_gap_analysis",
+            "planning": "generate_roadmap → save_roadmap",
+            "scheduling": "generate_schedule → save_schedule",
+            "task_management": "generate_tasks → get_today_tasks",
+            "execution": "checkin_task → trigger_insight → apply_insight",
+        },
+    }
 
 
 def main():
