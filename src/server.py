@@ -327,11 +327,28 @@ def save_gap_analysis(gap_json: str) -> str:
     何时调用：在 analyze_gaps 返回分析任务，LLM 完成分析后调用此工具保存结果。
 
     Args:
-        gap_json: 差距分析的 JSON 字符串，必须包含以下字段：
-            - match_score: 匹配度评分（0-100）
-            - skill_gaps: 技能差距列表
-            - priority_actions: 优先行动项列表
-            示例：'{"match_score":65, "skill_gaps":[{"skill":"TypeScript","priority":"high"}], ...}'
+        gap_json: 差距分析的 JSON 字符串
+
+    Schema:
+        {
+            "match_score": 65,           // 匹配度评分（0-100）
+            "skill_gaps": [              // 技能差距列表
+                {
+                    "skill": "TypeScript",      // 技能名称
+                    "priority": "high",         // 优先级：high/medium/low
+                    "current_level": "无",      // 当前水平
+                    "target_level": "熟练",     // 目标水平
+                    "source": "BOSS直聘 JD"     // 数据来源
+                }
+            ],
+            "priority_actions": [        // 优先行动项
+                "学习 TypeScript 基础",
+                "完成 TypeScript 项目"
+            ],
+            "strengths": [               // 优势
+                "有前端开发经验"
+            ]
+        }
     """
     try:
         gap_data = _parse_json_param(gap_json, "差距分析")
@@ -407,6 +424,31 @@ def save_roadmap(roadmap_json: str) -> str:
 
     Args:
         roadmap_json: 路线图的 JSON 字符串
+
+    Schema:
+        {
+            "phases": [                  // 阶段列表
+                {
+                    "name": "基础学习",           // 阶段名称
+                    "duration": "2周",            // 阶段时长
+                    "description": "学习基础",    // 阶段描述
+                    "milestones": [               // 里程碑列表
+                        {
+                            "name": "Python 基础",        // 里程碑名称
+                            "duration": "3天",            // 里程碑时长
+                            "description": "学习 Python", // 里程碑描述
+                            "tasks": [                    // 任务列表
+                                {
+                                    "name": "学习装饰器",           // 任务名称
+                                    "estimated_days": 1,           // 预计天数
+                                    "priority": "high"             // 优先级
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
     """
     try:
         roadmap_data = _parse_json_param(roadmap_json, "路线图")
@@ -490,6 +532,24 @@ def save_schedule(schedule_json: str) -> str:
 
     Args:
         schedule_json: 日程表的 JSON 字符串
+
+    Schema:
+        {
+            "schedule": [                // 日程列表
+                {
+                    "date": "2026-08-26",         // 日期
+                    "tasks": [                    // 任务列表
+                        {
+                            "name": "学习 Python",        // 任务名称
+                            "start_time": "09:00",        // 开始时间
+                            "end_time": "11:00",          // 结束时间
+                            "duration_hours": 2,          // 时长（小时）
+                            "priority": "high"            // 优先级
+                        }
+                    ]
+                }
+            ]
+        }
     """
     try:
         schedule_data = _parse_json_param(schedule_json, "日程表")
@@ -1194,6 +1254,29 @@ def apply_insight(insight_json: str) -> str:
 
     Args:
         insight_json: LLM 返回的洞察分析 JSON
+
+    Schema:
+        {
+            "status": "on_track",        // 状态：on_track/behind/ahead/need_adjustment
+            "summary": "进度正常",        // 进度总结
+            "insights": [                // 洞察列表
+                "学习速度超预期",
+                "可以加深难度"
+            ],
+            "adjustment_needed": false,  // 是否需要调整
+            "adjustment_type": "auto",   // 调整类型：auto/manual
+            "adjustment_reason": "",     // 调整原因
+            "changes": [                 // 调整列表
+                {
+                    "type": "compress_task",  // 类型：compress_task/add_task/remove_task
+                    "task_id": "task_001",    // 任务 ID
+                    "details": {              // 详情
+                        "new_days": 2
+                    }
+                }
+            ],
+            "user_message": "给用户的消息"
+        }
     """
     from .tools.insight import (
         apply_adjustment,
