@@ -7,5 +7,5 @@ build/
 *.egg
 .env
 dev/
-src/scrapers/*/cache/
+data/cache/
 .career-kit/

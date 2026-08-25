@@ -65,7 +65,8 @@ class CompanyScraper(ABC):
     def _make_cache(self, namespace: str) -> CacheManager:
         """创建一个缓存实例，namespace 用于隔离不同类型的缓存。"""
         ttl = self.detail_cache_ttl if namespace == "detail" else self.search_cache_ttl
-        cache_dir = Path(__file__).parent / self.COMPANY_SLUG / "cache" / namespace
+        # 缓存目录统一在 data/cache/ 下，不在 src/ 下
+        cache_dir = Path(__file__).parent.parent.parent / "data" / "cache" / self.COMPANY_SLUG / namespace
         return CacheManager(backend="file", ttl=ttl, cache_dir=cache_dir)
 
     @staticmethod
