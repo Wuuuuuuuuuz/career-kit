@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-import requests as req
+import httpx
 
 from ..base import CompanyScraper
 from .auth import load_cookies, has_valid_cookies
@@ -220,28 +220,28 @@ class Scraper(CompanyScraper):
         }
 
         try:
-            resp = req.get(SEARCH_URL, params=params, headers=headers, timeout=15)
+            resp = httpx.get(SEARCH_URL, params=params, headers=headers, timeout=15)
             data = resp.json()
         except Exception as e:
             return [{"error": f"请求失败: {e}"}]
 
-        # 处理响应码
-        code = data.get("code")
-        if code == 37:
+        # 处理 code=37（需要计算 stoken）
+        if data.get("code") == 37:
             new_stoken = handle_code37(data)
             if new_stoken:
                 headers = _build_headers(cookies, new_stoken)
                 try:
-                    resp = req.get(SEARCH_URL, params=params, headers=headers, timeout=15)
+                    resp = httpx.get(SEARCH_URL, params=params, headers=headers, timeout=15)
                     data = resp.json()
                 except Exception as e:
                     return [{"error": f"重试失败: {e}"}]
             else:
                 return [{"error": "stoken 计算失败，请安装 iv8: pip install iv8"}]
 
+        # 处理其他错误码
+        code = data.get("code")
         if code in (32, 35, 36):
             return [{"error": f"BOSS 风控限制 (code={code})，请稍后重试"}]
-
         if code != 0:
             return [{"error": f"API 错误: {data.get('message', '')}"}]
 
@@ -262,7 +262,7 @@ class Scraper(CompanyScraper):
         headers = _build_headers(cookies, stoken)
 
         try:
-            resp = req.get(url, headers=headers, timeout=15)
+            resp = httpx.get(url, headers=headers, timeout=15)
             html = resp.text
         except Exception as e:
             return {"error": f"请求失败: {e}"}

@@ -12,7 +12,7 @@ import time
 import urllib.parse
 from typing import Any
 
-import requests as req
+import httpx
 
 log = logging.getLogger(__name__)
 
@@ -23,14 +23,19 @@ _CANVAS_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAB9AAAADICAYAAACwGno
 
 # stoken 缓存
 _stoken_cache: dict | None = None
+_js_cache: dict[str, str] = {}
 
 
 def _fetch_js(name: str) -> str | None:
-    """下载加密 JS。"""
+    """下载加密 JS（带缓存）。"""
+    if name in _js_cache:
+        return _js_cache[name]
+
     js_url = f"https://www.zhipin.com/web/common/security-js/{name}.js"
     try:
-        resp = req.get(js_url, headers={"User-Agent": DEFAULT_UA}, timeout=15)
+        resp = httpx.get(js_url, headers={"User-Agent": DEFAULT_UA}, timeout=15)
         resp.raise_for_status()
+        _js_cache[name] = resp.text
         return resp.text
     except Exception as e:
         log.warning(f"下载 JS 失败: {e}")
@@ -133,5 +138,8 @@ def handle_code37(res_json: dict) -> str | None:
         return None
 
     log.info(f"触发 code37，重新计算 stoken（name={name}）")
-    invalidate_stoken()
-    return compute_stoken(seed, ts, name)
+    token = compute_stoken(seed, ts, name)
+    if token:
+        # 计算成功后再清除旧缓存（compute_stoken 会设置新缓存）
+        return token
+    return None
