@@ -22,13 +22,6 @@ from .tools.market import (
     search_market_data,
 )
 from .tools.plan_importer import compare_plans, format_diff_report, parse_plan_file
-from .tools.progress import (
-    build_checkin_prompt,
-    format_checkin_report,
-    format_progress_overview,
-    parse_checkin_response,
-    save_checkin,
-)
 from .tools.roadmap import format_roadmap, parse_roadmap
 from .tools.schedule import format_schedule, generate_ics, parse_schedule
 from .tools.profile import (
@@ -615,94 +608,8 @@ def export_ics(start_date: str = "") -> str:
     return (
         f"ICS 文件已生成：{ics_path}\n\n"
         "可以导入到 Google Calendar / Outlook / Apple Calendar 等日历应用。\n"
-        "开始执行后，请调用 track_progress 记录进度。"
+        "开始执行后，请调用 generate_tasks 生成任务列表进行打卡追踪。"
     )
-
-
-@mcp.tool()
-def track_progress(report: str) -> str:
-    """记录进度签到，分析偏差，自动调整后续计划。
-
-    何时调用：用户汇报学习/工作进度时调用。例如：
-    - "今天把 React 教程刷完了"
-    - "TypeScript 学了一周，感觉进度太慢"
-    - "面试挂了，需要调整计划"
-
-    签到模式：
-    - 完成了什么任务
-    - 花了多少时间
-    - 遇到什么阻碍
-    - 当前士气
-
-    工作流程：
-    1. 用户汇报进度（自然语言）
-    2. LLM 分析进度，调用 save_checkin 保存
-    3. 如果需要调整计划，调用 generate_schedule 重新生成日程
-
-    Args:
-        report: 用户的进度汇报（自然语言）
-            示例："今天把 React 教程刷完了，花了 3 小时"
-    """
-    profile = load_profile()
-
-    if not profile.plan:
-        return error_response(
-            "MISSING_DATA",
-            "请先生成路线图和日程。",
-            {"missing": "plan"},
-        )
-
-    # 构建签到分析 prompt
-    prompt = build_checkin_prompt(profile, report)
-
-    return (
-        f"【进度签到任务】\n\n"
-        f"{'=' * 50}\n\n"
-        f"{prompt}\n\n"
-        f"{'=' * 50}\n\n"
-        "请分析用户的进度汇报，然后调用 save_checkin(checkin_json) 保存结果。"
-    )
-
-
-@mcp.tool()
-def save_checkin(checkin_json: str) -> str:
-    """保存签到记录。
-
-    Args:
-        checkin_json: 签到分析的 JSON 字符串
-    """
-    try:
-        checkin_data = _parse_json_param(checkin_json, "签到数据")
-    except InvalidJsonError as exc:
-        return error_response(exc.code, exc.message, exc.details)
-
-    profile = load_profile()
-    profile = save_checkin(profile, checkin_data)
-    save_profile(profile)
-
-    # 格式化报告
-    report = format_checkin_report(checkin_data)
-
-    # 如果需要调整计划
-    adjustments = checkin_data.get("adjustments", {})
-    if adjustments.get("needed"):
-        report += "\n\n⚠️ 检测到计划需要调整。建议调用 generate_schedule 重新生成日程。"
-
-    return (
-        f"签到已保存。\n\n{report}\n\n"
-        "继续加油！下次签到请调用 track_progress。"
-    )
-
-
-@mcp.tool()
-def view_progress() -> str:
-    """查看整体进度概览。"""
-    profile = load_profile()
-
-    if not profile.plan:
-        return "暂无计划，请先生成路线图。"
-
-    return format_progress_overview(profile)
 
 
 @mcp.tool()

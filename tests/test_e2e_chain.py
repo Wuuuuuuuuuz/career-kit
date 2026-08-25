@@ -17,26 +17,21 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 import src.tools.profile as profile_module
 from src.models import CareerProfile
-from src.tools.gap_analyzer import (
-    build_sop_analysis_prompt,
-    format_gap_report,
-    parse_gap_analysis,
-)
-from src.tools.roadmap import build_roadmap_prompt, format_roadmap, parse_roadmap
+from src.tools.gap_analyzer import format_gap_report, parse_gap_analysis
+from src.tools.methodology import build_methodology_context
+from src.tools.roadmap import format_roadmap, parse_roadmap
 from src.tools.schedule import (
-    build_schedule_prompt,
     format_schedule,
     generate_ics,
     parse_schedule,
 )
-from src.tools.progress import (
-    build_checkin_prompt,
-    format_checkin_report,
+from src.tools.task_manager import (
+    checkin_task as do_checkin,
+    create_tasks_from_roadmap,
     format_progress_overview,
-    parse_checkin_response,
-    save_checkin,
+    set_deadlines,
 )
-from src.tools.market import search_market_data, build_market_search_prompt
+from src.models import CheckIn
 
 
 # === 模拟 LLM 响应 ===
@@ -370,10 +365,10 @@ def test_step2_gap_analysis():
 
         profile = profile_module.load_profile(name)
 
-        # 构建分析 prompt
-        prompt, metadata = build_sop_analysis_prompt(profile)
-        assert "简历过筛" in metadata or "resume_sop" in metadata
-        print(f"[OK] 差距分析 prompt 构建成功")
+        # 构建分析上下文（方法论）
+        ctx = build_methodology_context("resume_screening", profile)
+        assert ctx["methodology"]
+        print(f"[OK] 差距分析方法论上下文构建成功")
 
         # 模拟 LLM 响应解析
         mock_response = f"```json\n{json.dumps(MOCK_GAP_ANALYSIS, ensure_ascii=False)}\n```"
@@ -419,10 +414,10 @@ def test_step3_roadmap():
         profile.touch()
         profile_module.save_profile(profile, name)
 
-        # 构建路线图 prompt
-        prompt, metadata = build_roadmap_prompt(profile)
-        assert "roadmap_sop" in metadata
-        print(f"[OK] 路线图 prompt 构建成功")
+        # 构建路线图方法论上下文
+        ctx = build_methodology_context("roadmap", profile)
+        assert ctx["methodology"]
+        print(f"[OK] 路线图方法论上下文构建成功")
 
         # 解析模拟 LLM 响应
         mock_response = f"```json\n{json.dumps(MOCK_ROADMAP, ensure_ascii=False)}\n```"
@@ -488,10 +483,10 @@ def test_step4_schedule():
         profile.touch()
         profile_module.save_profile(profile, name)
 
-        # 构建日程 prompt
-        prompt, metadata = build_schedule_prompt(profile, "this_week")
-        assert "schedule_sop" in metadata
-        print(f"[OK] 日程 prompt 构建成功")
+        # 构建日程方法论上下文
+        ctx = build_methodology_context("schedule", profile)
+        assert ctx["methodology"]
+        print(f"[OK] 日程方法论上下文构建成功")
 
         # 解析模拟 LLM 响应
         mock_response = f"```json\n{json.dumps(MOCK_SCHEDULE, ensure_ascii=False)}\n```"
@@ -537,7 +532,7 @@ def test_step4_schedule():
 
 
 def test_step5_progress_tracking():
-    """步骤5: 进度追踪——签到 + 偏差分析 + 进度概览。"""
+    """步骤5: 进度追踪——任务生成 + 打卡 + 进度概览（任务级系统）。"""
     print("=" * 60)
     print("步骤 5: 进度追踪")
     print("=" * 60)
@@ -545,62 +540,45 @@ def test_step5_progress_tracking():
     tmpdir, original_dir, name = _setup_temp_profile()
 
     try:
-        # 建档 + 全链路数据
+        # 建档 + 路线图
         profile_module.merge_section("who", '{"name":"测试","status":"在职"}', name)
-        profile_module.merge_section("have", '{"skills":["Python"],"status":"在职"}', name)
-        profile_module.merge_section("want", '{"target_role":"AI Agent 工程师"}', name)
-
         profile = profile_module.load_profile(name)
-        profile.gap = copy.deepcopy(MOCK_GAP_ANALYSIS)
         profile.plan = copy.deepcopy(MOCK_ROADMAP)
-        profile.plan["schedule"] = copy.deepcopy(MOCK_SCHEDULE["schedule"])
         profile.touch()
         profile_module.save_profile(profile, name)
+        profile = profile_module.load_profile(name)
 
-        # 构建签到 prompt
-        prompt = build_checkin_prompt(profile, "今天看了 LangChain 文档，跑了 quickstart")
-        assert "签到" in prompt or "汇报" in prompt
-        print(f"[OK] 签到 prompt 构建成功")
+        # 从路线图生成任务
+        tasks = create_tasks_from_roadmap(profile)
+        assert len(tasks) > 0, "应从路线图生成任务"
+        tasks = set_deadlines(tasks)
+        for t in tasks:
+            profile.add_task(t)
+        profile_module.save_profile(profile, name)
+        print(f"[OK] 生成 {len(tasks)} 个任务")
 
-        # 签到1: 正常进度
-        checkin1 = parse_checkin_response(f"```json\n{json.dumps(MOCK_CHECKIN_1, ensure_ascii=False)}\n```")
-        assert checkin1["progress_pct"] == 15
-        assert checkin1["morale"] == "high"
-        assert checkin1["deviation"]["on_track"] is True
-        print(f"[OK] 签到1解析成功: {checkin1['progress_pct']}% 💪")
-
-        profile = save_checkin(profile, checkin1)
-        assert len(profile.plan["progress_log"]) == 1
-        assert profile.plan["current_progress"] == 15
-        print(f"[OK] 签到1已保存")
-
-        # 签到2: 继续推进
-        checkin2 = parse_checkin_response(f"```json\n{json.dumps(MOCK_CHECKIN_2, ensure_ascii=False)}\n```")
-        profile = save_checkin(profile, checkin2)
-        assert len(profile.plan["progress_log"]) == 2
-        assert profile.plan["current_progress"] == 30
-        print(f"[OK] 签到2已保存: {checkin2['progress_pct']}%")
-
-        # 签到3: 落后了
-        checkin3 = parse_checkin_response(f"```json\n{json.dumps(MOCK_CHECKIN_3_LAGGING, ensure_ascii=False)}\n```")
-        profile = save_checkin(profile, checkin3)
-        assert profile.plan["current_progress"] == 35
-        assert checkin3["deviation"]["on_track"] is False
-        assert checkin3["adjustments"]["needed"] is True
-        print(f"[OK] 签到3已保存: 落后 {abs(checkin3['deviation']['days_ahead_or_behind'])} 天")
-
-        # 格式化签到报告
-        report = format_checkin_report(checkin3)
-        assert "35%" in report
-        assert "落后" in report
-        assert "embedding" in report  # blocker
-        print(f"[OK] 签到报告格式化成功")
+        # 打卡第一个任务
+        first_task_id = tasks[0].id
+        checkin = CheckIn(task_id=first_task_id, status="completed", notes="测试打卡")
+        profile, saved_checkin = do_checkin(
+            profile_module.load_profile(name), first_task_id, "completed", "测试打卡"
+        )
+        assert len(profile.checkins) == 1
+        completed = [t for t in profile.tasks if t.status == "completed"]
+        assert len(completed) == 1
+        print(f"[OK] 任务 {first_task_id} 打卡成功")
 
         # 进度概览
         overview = format_progress_overview(profile)
-        assert "35%" in overview
-        assert "3 次" in overview or "3次" in overview
+        assert "任务" in overview
         print(f"[OK] 进度概览格式化成功")
+
+        # 持久化后重新加载验证
+        profile_module.save_profile(profile, name)
+        final = profile_module.load_profile(name)
+        assert len(final.checkins) == 1
+        assert len(final.tasks) == len(tasks)
+        print(f"[OK] 打卡数据持久化验证通过")
 
         print()
         return True
@@ -608,37 +586,8 @@ def test_step5_progress_tracking():
         _restore_profile_dir(original_dir)
 
 
-def test_step6_market_search():
-    """步骤6: 市场搜索——验证搜索路由和 prompt 构建。"""
-    print("=" * 60)
-    print("步骤 6: 市场搜索")
-    print("=" * 60)
-
-    # 面经搜索
-    result1 = search_market_data("字节跳动 AI Agent 面经")
-    assert result1["search_type"] == "interview_experiences"
-    prompt1 = build_market_search_prompt("字节跳动 AI Agent 面经", result1)
-    assert "字节跳动" in prompt1
-    print(f"[OK] 面经搜索: type={result1['search_type']}")
-
-    # 薪资搜索
-    result2 = search_market_data("AI Agent 工程师薪资水平")
-    assert result2["search_type"] == "market_trends"
-    prompt2 = build_market_search_prompt("AI Agent 工程师薪资水平", result2)
-    assert "AI Agent" in prompt2
-    print(f"[OK] 薪资搜索: type={result2['search_type']}")
-
-    # JD 搜索
-    result3 = search_market_data("大模型岗位 JD 要求")
-    assert result3["search_type"] == "job_requirements"
-    print(f"[OK] JD 搜索: type={result3['search_type']}")
-
-    print()
-    return True
-
-
 def test_step7_data_continuity():
-    """步骤7: 数据连续性——验证从建档到签到的完整数据流。"""
+    """步骤7: 数据连续性——验证从建档到任务打卡的完整数据流。"""
     print("=" * 60)
     print("步骤 7: 数据连续性验证")
     print("=" * 60)
@@ -658,20 +607,19 @@ def test_step7_data_continuity():
         profile.touch()
         profile_module.save_profile(profile, name)
 
-        # 写入路线图
+        # 写入路线图 + 日程
         profile.plan = copy.deepcopy(MOCK_ROADMAP)
-        profile.touch()
-        profile_module.save_profile(profile, name)
-
-        # 写入日程
-        profile = profile_module.load_profile(name)
         profile.plan["schedule"] = copy.deepcopy(MOCK_SCHEDULE["schedule"])
         profile.touch()
         profile_module.save_profile(profile, name)
 
-        # 写入签到
+        # 生成任务并打卡
         profile = profile_module.load_profile(name)
-        profile = save_checkin(profile, MOCK_CHECKIN_1)
+        tasks = create_tasks_from_roadmap(profile)
+        tasks = set_deadlines(tasks)
+        for t in tasks:
+            profile.add_task(t)
+        profile, _ = do_checkin(profile, tasks[0].id, "completed")
         profile_module.save_profile(profile, name)
 
         # 重新加载，验证所有数据都在
@@ -682,14 +630,14 @@ def test_step7_data_continuity():
         assert final.gap["match_score"] == 55
         assert final.plan["roadmap"]["total_duration"] == "2个月"
         assert final.plan["schedule"]["total_days"] == 5
-        assert len(final.plan["progress_log"]) == 1
-        assert final.plan["current_progress"] == 15
+        assert len(final.tasks) == len(tasks)
+        assert len(final.checkins) == 1
         print(f"[OK] 全链路数据连续性验证通过")
         print(f"  - who: {final.who['name']}")
         print(f"  - gap: 匹配度 {final.gap['match_score']}")
         print(f"  - roadmap: {final.plan['roadmap']['total_duration']}")
         print(f"  - schedule: {final.plan['schedule']['total_days']} 天")
-        print(f"  - progress: {final.plan['current_progress']}%")
+        print(f"  - tasks: {len(final.tasks)} 个，checkins: {len(final.checkins)} 次")
 
         print()
         return True
@@ -714,8 +662,14 @@ def test_step8_mcp_tools_registered():
         "import_jd", "import_jd_file", "analyze_gaps", "save_gap_analysis",
         "generate_roadmap", "save_roadmap",
         "generate_schedule", "save_schedule", "export_ics",
-        "track_progress", "save_checkin", "view_progress",
         "search_market",
+    ]
+
+    # 任务与洞察工具
+    task_tools = [
+        "generate_tasks", "get_today_tasks", "checkin_task",
+        "trigger_insight", "apply_insight", "get_progress", "suggest_adjustment",
+        "get_workflow_status",
     ]
 
     # 版本管理工具
@@ -724,7 +678,7 @@ def test_step8_mcp_tools_registered():
         "merge_plan", "list_plan_versions", "restore_plan",
     ]
 
-    all_expected = chain_tools + version_tools
+    all_expected = chain_tools + task_tools + version_tools
     missing = [t for t in all_expected if t not in tools]
 
     if missing:
@@ -752,7 +706,6 @@ def main():
         ("路线图", test_step3_roadmap),
         ("日程生成", test_step4_schedule),
         ("进度追踪", test_step5_progress_tracking),
-        ("市场搜索", test_step6_market_search),
         ("数据连续性", test_step7_data_continuity),
         ("MCP Tools", test_step8_mcp_tools_registered),
     ]

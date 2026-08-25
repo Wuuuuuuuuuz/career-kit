@@ -12,78 +12,69 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 from src.models import CareerProfile
 from src.tools.gap_analyzer import (
-    build_gap_analysis_prompt,
-    build_sop_analysis_prompt,
     format_gap_report,
     parse_gap_analysis,
 )
+from src.tools.methodology import build_methodology_context, load_methodology
 from src.tools.profile import load_profile, merge_section, save_profile
-from src.tools.sop_executor import execute_sop, load_sop
 from src.tools.data_source import DataRouter, LocalKnowledgeSource, LLMKnowledgeSource
 
 
 def test_sop_config_loading():
-    """测试 SOP 配置文件加载。"""
+    """测试方法论配置文件加载。"""
     print("=" * 60)
-    print("测试 1: SOP 配置文件加载")
+    print("测试 1: 方法论配置加载")
     print("=" * 60)
 
-    # 测试加载简历过筛 SOP
-    resume_sop = load_sop("resume_screening")
-    assert resume_sop["name"] == "简历过筛"
-    assert len(resume_sop["steps"]) > 0
-    step_ids = [s["id"] for s in resume_sop["steps"]]
-    assert "build_persona" in step_ids
-    assert "build_resume_advice" in step_ids
-    print(f"[OK] 简历过筛 SOP 加载成功，共 {len(resume_sop['steps'])} 步")
+    # 测试加载简历过筛方法论
+    resume_m = load_methodology("resume_screening")
+    assert resume_m["name"] == "简历过筛"
+    phase_ids = [p["id"] for p in resume_m["methodology"]["phases"]]
+    assert "gather_data" in phase_ids
+    assert "generate_advice" in phase_ids
+    print(f"[OK] 简历过筛方法论加载成功，共 {len(phase_ids)} 阶段")
 
-    # 测试加载面试通过 SOP
-    interview_sop = load_sop("interview_prep")
-    assert interview_sop["name"] == "面试通过"
-    assert len(interview_sop["steps"]) > 0
-    step_ids = [s["id"] for s in interview_sop["steps"]]
-    assert "search_interview_experiences" in step_ids
-    assert "build_interview_advice" in step_ids
-    print(f"[OK] 面试通过 SOP 加载成功，共 {len(interview_sop['steps'])} 步")
+    # 测试加载面试通过方法论
+    interview_m = load_methodology("interview_prep")
+    assert interview_m["name"] == "面试通过"
+    phase_ids = [p["id"] for p in interview_m["methodology"]["phases"]]
+    assert "analyze_interview" in phase_ids
+    assert "generate_preparation" in phase_ids
+    print(f"[OK] 面试通过方法论加载成功，共 {len(phase_ids)} 阶段")
 
     print()
 
 
 def test_sop_execution():
-    """测试 SOP 执行（不含实际 LLM 调用）。"""
+    """测试方法论上下文构建（替代旧 SOP 执行）。"""
     print("=" * 60)
-    print("测试 2: SOP 执行")
+    print("测试 2: 方法论上下文构建")
     print("=" * 60)
 
-    user_have = {
+    profile = CareerProfile()
+    profile.have = {
         "skills": ["Python", "React"],
         "experience": "2年前端开发",
         "education": "双非本科",
     }
-    user_want = {
+    profile.want = {
         "target_role": "AI Agent 开发工程师",
         "target_company": "字节跳动",
         "timeline": "6个月",
     }
 
-    # 执行简历过筛 SOP
-    result = execute_sop("resume_screening", user_have, user_want)
-    assert result["sop_name"] == "简历过筛"
-    assert len(result["steps"]) > 0
-    assert result["context"]["user_have"]  # 上下文应该有数据
-    print(f"[OK] 简历过筛 SOP 执行成功，{len(result['steps'])} 步")
+    # 构建简历过筛上下文
+    ctx = build_methodology_context("resume_screening", profile)
+    assert ctx["methodology"]
+    assert ctx["profile"]["have"]["skills"] == ["Python", "React"]
+    assert ctx["methodology"]["name"] == "简历过筛"
+    print("[OK] 简历过筛上下文构建成功")
 
-    # 检查每步有 prompt 或 data_source_query（或被跳过）
-    for step in result["steps"]:
-        has_output = step.get("prompt") or step.get("data_source_query") or step.get("skipped_reason")
-        assert has_output, f"步骤 {step['id']} 没有输出"
-    print("[OK] 每步都有输出（或被标记为跳过）")
-
-    # 执行面试通过 SOP
-    result2 = execute_sop("interview_prep", user_have, user_want)
-    assert result2["sop_name"] == "面试通过"
-    assert len(result2["steps"]) > 0
-    print(f"[OK] 面试通过 SOP 执行成功，{len(result2['steps'])} 步")
+    # 构建面试通过上下文
+    ctx2 = build_methodology_context("interview_prep", profile)
+    assert ctx2["methodology"]["name"] == "面试通过"
+    assert ctx2["profile"]["want"]["target_role"] == "AI Agent 开发工程师"
+    print("[OK] 面试通过上下文构建成功")
 
     print()
 
@@ -120,32 +111,28 @@ def test_data_source():
 def test_sop_with_retrieval():
     """测试带数据检索的 SOP 执行。"""
     print("=" * 60)
-    print("测试 4: SOP + 数据检索")
+    print("测试 4: 方法论数据需求声明")
     print("=" * 60)
 
-    user_have = {"skills": ["Python"], "education": "双非本科"}
-    user_want = {"target_role": "AI Agent 开发工程师"}
+    m = load_methodology("resume_screening")
+    phases = m["methodology"]["phases"]
 
-    result = execute_sop("resume_screening", user_have, user_want)
+    # 检查有数据需求的阶段
+    data_phases = [p for p in phases if p.get("data_needs")]
+    assert len(data_phases) > 0
+    print(f"[OK] 有 {len(data_phases)} 个阶段包含数据需求")
 
-    # 检查有数据源配置的步骤
-    data_steps = [s for s in result["steps"] if s.get("data_source_query") or s.get("skipped_reason")]
-    assert len(data_steps) > 0
-    print(f"[OK] 有 {len(data_steps)} 个步骤包含数据源配置")
-
-    for step in data_steps:
-        if step.get("data_source_query"):
-            print(f"  - {step['name']}: query='{step['data_source_query'][:50]}...'")
-        else:
-            print(f"  - {step['name']}: {step['skipped_reason']}")
+    for phase in data_phases:
+        needs = phase.get("data_needs", [])
+        print(f"  - {phase['id']}: {len(needs)} 个数据需求")
 
     print()
 
 
 def test_build_sop_prompt():
-    """测试 SOP 驱动的 prompt 构建。"""
+    """测试方法论上下文构建。"""
     print("=" * 60)
-    print("测试 5: SOP Prompt 构建")
+    print("测试 5: 方法论上下文构建")
     print("=" * 60)
 
     profile = CareerProfile()
@@ -163,20 +150,22 @@ def test_build_sop_prompt():
         "required_skills": ["LangGraph", "RAG", "FastAPI"],
     }
 
-    prompt, metadata = build_sop_analysis_prompt(profile)
+    from src.tools.methodology import build_methodology_context
 
-    # 检查 prompt 包含必要内容
-    assert "Python" in prompt
-    assert "AI Agent" in prompt
-    assert "简历过筛" in prompt
-    assert "面试通过" in prompt
-    assert "JSON" in prompt
-    print("[OK] prompt 包含所有必要内容")
+    ctx1 = build_methodology_context("resume_screening", profile)
+    ctx2 = build_methodology_context("interview_prep", profile)
 
-    # 检查 metadata
-    assert "resume_sop" in metadata
-    assert "interview_sop" in metadata
-    print(f"[OK] metadata 包含 {len(metadata['resume_sop']['steps'])} + {len(metadata['interview_sop']['steps'])} 步")
+    # 检查方法论内容
+    assert ctx1["methodology"]
+    assert ctx2["methodology"]
+    assert "profile" in ctx1
+    print("[OK] 方法论上下文包含所有必要内容")
+
+    prompt = json.dumps(ctx1["methodology"], ensure_ascii=False, default=str) + json.dumps(
+        ctx2["methodology"], ensure_ascii=False, default=str
+    )
+    assert "Python" in prompt or "简历" in prompt
+    print("[OK] 方法论内容校验通过")
 
     print()
 
@@ -371,13 +360,14 @@ def test_full_flow():
         save_profile(profile, "test")
         print("[OK] 导入 JD")
 
-        # 3. SOP 驱动分析
+        # 3. 方法论驱动分析
         profile = load_profile("test")
-        prompt, metadata = build_sop_analysis_prompt(profile)
-        assert "LangGraph" in prompt or "AI Agent" in prompt
-        assert metadata["resume_sop"]["name"] == "简历过筛"
-        assert metadata["interview_sop"]["name"] == "面试通过"
-        print("[OK] SOP 分析构建成功")
+        from src.tools.methodology import build_methodology_context
+        ctx1 = build_methodology_context("resume_screening", profile)
+        ctx2 = build_methodology_context("interview_prep", profile)
+        assert ctx1["methodology"]
+        assert ctx2["methodology"]
+        print("[OK] 方法论上下文构建成功")
 
         # 4. 模拟 LLM 输出并保存
         gap_data = {

@@ -11,26 +11,24 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 from src.models import CareerProfile
 from src.tools.roadmap import (
-    build_roadmap_prompt,
     format_roadmap,
     parse_roadmap,
 )
-from src.tools.sop_executor import load_sop
+from src.tools.methodology import load_methodology
 
 
 def test_sop_config():
-    """测试路线图 SOP 配置加载。"""
+    """测试路线图方法论配置加载。"""
     print("=" * 60)
-    print("测试 1: 路线图 SOP 配置")
+    print("测试 1: 路线图方法论配置")
     print("=" * 60)
 
-    sop = load_sop("roadmap")
-    assert sop["name"] == "路线图生成"
-    assert len(sop["steps"]) == 2
-    step_ids = [s["id"] for s in sop["steps"]]
-    assert "analyze_gap_for_roadmap" in step_ids
-    assert "design_roadmap" in step_ids
-    print(f"[OK] 路线图 SOP 加载成功，{len(sop['steps'])} 步")
+    m = load_methodology("roadmap")
+    assert m["name"] == "路线图生成"
+    phase_ids = [p["id"] for p in m["methodology"]["phases"]]
+    assert "gather_market_data" in phase_ids
+    assert "design_roadmap" in phase_ids
+    print(f"[OK] 路线图方法论加载成功，{len(phase_ids)} 阶段")
 
     print()
 
@@ -209,10 +207,10 @@ def test_format_roadmap():
     print(f"{'-' * 40}\n")
 
 
-def test_build_roadmap_prompt():
-    """测试路线图 prompt 构建。"""
+def test_build_roadmap_context():
+    """测试路线图方法论上下文构建。"""
     print("=" * 60)
-    print("测试 4: 路线图 Prompt 构建")
+    print("测试 4: 路线图方法论上下文构建")
     print("=" * 60)
 
     profile = CareerProfile()
@@ -235,13 +233,15 @@ def test_build_roadmap_prompt():
         },
     }
 
-    prompt, metadata = build_roadmap_prompt(profile)
+    from src.tools.methodology import build_methodology_context
 
-    assert "LangGraph" in prompt
-    assert "RAG" in prompt
-    assert "learn" in prompt or "project" in prompt
-    assert metadata.get("roadmap_sop")
-    print(f"[OK] prompt 构建成功，包含 {len(metadata['roadmap_sop']['steps'])} 个 SOP 步骤")
+    ctx = build_methodology_context("roadmap", profile)
+
+    assert ctx["methodology"]
+    assert "profile" in ctx
+    prompt = json.dumps(ctx, ensure_ascii=False, default=str)
+    assert "LangGraph" in prompt or "roadmap" in prompt.lower()
+    print("[OK] 方法论上下文构建成功")
 
     print()
 
@@ -274,7 +274,7 @@ def main():
         test_sop_config,
         test_parse_roadmap,
         test_format_roadmap,
-        test_build_roadmap_prompt,
+        test_build_roadmap_context,
         test_mcp_tools,
     ]
 

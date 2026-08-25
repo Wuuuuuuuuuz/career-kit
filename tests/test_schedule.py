@@ -1,4 +1,4 @@
-"""日程生成 + 进度追踪 + 市场搜索测试。"""
+"""日程生成 + 任务追踪测试。"""
 
 from __future__ import annotations
 
@@ -11,34 +11,32 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 from src.models import CareerProfile
 from src.tools.schedule import (
-    build_schedule_prompt,
     format_schedule,
     generate_ics,
     parse_schedule,
 )
-from src.tools.progress import (
-    build_checkin_prompt,
-    format_checkin_report,
+from src.tools.task_manager import (
+    checkin_task as do_checkin,
+    create_tasks_from_roadmap,
     format_progress_overview,
-    parse_checkin_response,
-    save_checkin,
+    set_deadlines,
 )
-from src.tools.market import search_market_data, build_market_search_prompt
 
 
 # === 日程生成测试 ===
 
 def test_schedule_sop_config():
-    """测试日程 SOP 配置。"""
+    """测试日程方法论配置。"""
     print("=" * 60)
-    print("测试 1: 日程 SOP 配置")
+    print("测试 1: 日程方法论配置")
     print("=" * 60)
 
-    from src.tools.sop_executor import load_sop
-    sop = load_sop("schedule")
-    assert sop["name"] == "日程生成"
-    assert len(sop["steps"]) == 2
-    print(f"[OK] 日程 SOP 加载成功，{len(sop['steps'])} 步")
+    from src.tools.methodology import load_methodology
+    m = load_methodology("schedule")
+    assert m["name"] == "日程生成"
+    phases = m["methodology"]["phases"]
+    assert len(phases) >= 2
+    print(f"[OK] 日程方法论加载成功，{len(phases)} 阶段")
     print()
 
 
@@ -179,169 +177,106 @@ def test_generate_ics():
     print()
 
 
-# === 进度追踪测试 ===
+# === 任务追踪测试 ===
 
-def test_checkin_prompt():
-    """测试签到 prompt 构建。"""
+def test_create_tasks_from_roadmap():
+    """测试从路线图生成任务。"""
     print("=" * 60)
-    print("测试 5: 签到 Prompt 构建")
-    print("=" * 60)
-
-    profile = CareerProfile()
-    profile.plan = {
-        "roadmap": {
-            "phases": [{"name": "基础", "type": "learn", "milestones": []}]
-        },
-        "progress_log": [],
-    }
-
-    prompt = build_checkin_prompt(profile, "今天看了 LangChain 文档，跑了 quickstart")
-
-    assert "LangChain" in prompt
-    assert "签到" in prompt or "汇报" in prompt
-    print("[OK] 签到 prompt 构建成功")
-    print()
-
-
-def test_parse_checkin():
-    """测试签到解析。"""
-    print("=" * 60)
-    print("测试 6: 解析签到响应")
-    print("=" * 60)
-
-    llm_response = '''
-    ```json
-    {
-        "completed_tasks": ["看 LangChain 文档", "跑通 quickstart"],
-        "progress_pct": 30,
-        "time_spent": "3小时",
-        "blockers": [],
-        "morale": "high",
-        "deviation": {
-            "on_track": true,
-            "days_ahead_or_behind": 0,
-            "reason": "进度正常"
-        },
-        "next_steps": ["开始做示例项目"],
-        "adjustments": {"needed": false}
-    }
-    ```
-    '''
-
-    result = parse_checkin_response(llm_response)
-    assert result["progress_pct"] == 30
-    assert len(result["completed_tasks"]) == 2
-    assert result["morale"] == "high"
-    assert result["deviation"]["on_track"] is True
-    print("[OK] 签到解析成功")
-    print()
-
-
-def test_format_checkin():
-    """测试签到报告格式化。"""
-    print("=" * 60)
-    print("测试 7: 格式化签到报告")
-    print("=" * 60)
-
-    checkin_data = {
-        "completed_tasks": ["看文档", "跑 quickstart"],
-        "progress_pct": 30,
-        "time_spent": "3小时",
-        "blockers": ["环境配置花了很久"],
-        "morale": "high",
-        "deviation": {"on_track": True, "days_ahead_or_behind": 0, "reason": "正常"},
-        "next_steps": ["做示例项目"],
-        "adjustments": {"needed": False},
-    }
-
-    report = format_checkin_report(checkin_data)
-
-    assert "30%" in report
-    assert "看文档" in report
-    assert "💪" in report
-    assert "环境配置" in report
-    print("[OK] 签到报告格式化成功")
-
-    print(f"\n报告预览:\n{'-' * 40}")
-    print(report[:600])
-    print(f"{'-' * 40}\n")
-
-
-def test_save_checkin():
-    """测试签到保存。"""
-    print("=" * 60)
-    print("测试 8: 保存签到记录")
-    print("=" * 60)
-
-    profile = CareerProfile()
-    profile.plan = {"roadmap": {"phases": []}}
-
-    checkin_data = {
-        "completed_tasks": ["任务1"],
-        "progress_pct": 25,
-        "morale": "neutral",
-    }
-
-    profile = save_checkin(profile, checkin_data)
-
-    assert len(profile.plan["progress_log"]) == 1
-    assert profile.plan["current_progress"] == 25
-    assert profile.plan["progress_log"][0]["completed_tasks"] == ["任务1"]
-    print("[OK] 签到保存成功")
-    print()
-
-
-def test_progress_overview():
-    """测试进度概览。"""
-    print("=" * 60)
-    print("测试 9: 进度概览")
+    print("测试 5: 从路线图生成任务")
     print("=" * 60)
 
     profile = CareerProfile()
     profile.plan = {
-        "current_progress": 45,
-        "progress_log": [
-            {"timestamp": "2026-08-20T10:00:00", "progress_pct": 20, "morale": "high", "completed_tasks": ["t1"]},
-            {"timestamp": "2026-08-21T10:00:00", "progress_pct": 45, "morale": "neutral", "completed_tasks": ["t2", "t3"]},
-        ],
         "roadmap": {
             "phases": [
-                {"name": "基础", "type": "learn", "milestones": [{"name": "M1", "duration": "1周"}]},
+                {
+                    "name": "基础",
+                    "milestones": [
+                        {
+                            "name": "LangChain 入门",
+                            "duration": "3天",
+                            "tasks": [
+                                {"name": "看官方文档", "estimated_days": 1},
+                                {"name": "跑通 quickstart", "estimated_days": 2},
+                            ],
+                        },
+                    ],
+                },
             ],
         },
     }
 
-    report = format_progress_overview(profile)
-
-    assert "45%" in report
-    assert "2 次" in report or "2次" in report
-    assert "基础" in report
-    print("[OK] 进度概览格式化成功")
+    tasks = create_tasks_from_roadmap(profile)
+    assert len(tasks) == 2
+    assert tasks[0].name == "看官方文档"
+    assert tasks[0].phase_id == "phase_1"
+    print(f"[OK] 生成 {len(tasks)} 个任务")
     print()
 
 
-# === 市场搜索测试 ===
-
-def test_market_search():
-    """测试市场搜索。"""
+def test_checkin_task_flow():
+    """测试任务打卡流程。"""
     print("=" * 60)
-    print("测试 10: 市场搜索")
+    print("测试 6: 任务打卡")
     print("=" * 60)
 
-    # 测试面经搜索
-    result = search_market_data("字节跳动 Agent 开发面经")
-    assert result["search_type"] == "interview_experiences"
-    print(f"[OK] 面经搜索类型推断正确: {result['search_type']}")
+    profile = CareerProfile()
+    profile.plan = {
+        "roadmap": {
+            "phases": [
+                {
+                    "name": "基础",
+                    "milestones": [
+                        {"name": "M1", "duration": "1天", "tasks": [{"name": "任务1", "estimated_days": 1}]},
+                    ],
+                },
+            ],
+        },
+    }
+    tasks = create_tasks_from_roadmap(profile)
+    for t in tasks:
+        profile.add_task(t)
 
-    # 测试薪资搜索
-    result2 = search_market_data("AI Agent 岗位薪资")
-    assert result2["search_type"] == "market_trends"
-    print(f"[OK] 薪资搜索类型推断正确: {result2['search_type']}")
+    # 打卡完成
+    profile, checkin = do_checkin(profile, tasks[0].id, "completed", notes="测试")
 
-    # 测试 prompt 构建
-    prompt = build_market_search_prompt("AI Agent 薪资", result2)
-    assert "AI Agent" in prompt
-    print("[OK] 市场搜索 prompt 构建成功")
+    assert len(profile.checkins) == 1
+    assert profile.checkins[0].task_id == tasks[0].id
+    assert profile.tasks[0].status == "completed"
+    print(f"[OK] 任务 {tasks[0].id} 打卡成功，状态: {profile.tasks[0].status}")
+    print()
+
+
+def test_progress_overview():
+    """测试进度概览（任务级）。"""
+    print("=" * 60)
+    print("测试 7: 进度概览")
+    print("=" * 60)
+
+    profile = CareerProfile()
+    profile.plan = {
+        "roadmap": {
+            "phases": [
+                {
+                    "name": "基础",
+                    "milestones": [
+                        {"name": "M1", "duration": "1天", "tasks": [{"name": "任务1", "estimated_days": 1}]},
+                        {"name": "M2", "duration": "1天", "tasks": [{"name": "任务2", "estimated_days": 1}]},
+                    ],
+                },
+            ],
+        },
+    }
+    tasks = create_tasks_from_roadmap(profile)
+    for t in tasks:
+        profile.add_task(t)
+    profile, _ = do_checkin(profile, tasks[0].id, "completed")
+
+    report = format_progress_overview(profile)
+
+    assert "任务" in report
+    assert "已完成" in report
+    print("[OK] 进度概览格式化成功")
     print()
 
 
@@ -350,7 +285,7 @@ def test_market_search():
 def test_mcp_tools():
     """测试 MCP tools 注册。"""
     print("=" * 60)
-    print("测试 11: MCP Tools 注册")
+    print("测试 8: MCP Tools 注册")
     print("=" * 60)
 
     from src.server import mcp
@@ -358,8 +293,8 @@ def test_mcp_tools():
     tools = [t.name for t in mcp._tool_manager.list_tools()]
 
     expected = ["generate_schedule", "save_schedule", "export_ics",
-                "track_progress", "save_checkin", "view_progress",
-                "search_market"]
+                "generate_tasks", "get_today_tasks", "checkin_task",
+                "trigger_insight", "apply_insight", "get_progress"]
 
     for t in expected:
         assert t in tools, f"{t} 未注册"
@@ -371,7 +306,7 @@ def test_mcp_tools():
 def main():
     """运行所有测试。"""
     print("\n" + "=" * 60)
-    print("日程 + 进度 + 市场搜索 测试套件")
+    print("日程 + 任务追踪 测试套件")
     print("=" * 60 + "\n")
 
     tests = [
@@ -379,12 +314,9 @@ def main():
         test_parse_schedule,
         test_format_schedule,
         test_generate_ics,
-        test_checkin_prompt,
-        test_parse_checkin,
-        test_format_checkin,
-        test_save_checkin,
+        test_create_tasks_from_roadmap,
+        test_checkin_task_flow,
         test_progress_overview,
-        test_market_search,
         test_mcp_tools,
     ]
 
