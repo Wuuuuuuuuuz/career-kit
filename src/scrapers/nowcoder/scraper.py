@@ -38,6 +38,16 @@ class Scraper(CompanyScraper):
     COMPANY_SLUG = "nowcoder"
     DATA_TYPE = "interviews"
 
+    # 搜索参数定义（唯一事实源，list_data_sources 渲染给 LLM）
+    PARAMS: dict[str, dict[str, Any]] = {
+        "keyword": {"required": False, "description": "搜索关键词（如 \"Agent 开发\"、\"面经\"）"},
+        "filter_company": {"required": False, "description": "按公司筛选（如 \"字节跳动\"、\"腾讯\"），自动拼接到搜索词"},
+        "is_intern": {"required": False, "description": "是否搜索实习岗位（true 时追加\"实习\"关键词）"},
+        "order": {"required": False, "description": "排序方式：create=最新(默认), quality=最热"},
+        "page": {"required": False, "description": "页码，默认 1"},
+        "limit": {"required": False, "description": "返回数量上限，默认 20"},
+    }
+
     search_cache_ttl = 3600
     detail_cache_ttl = 86400
 

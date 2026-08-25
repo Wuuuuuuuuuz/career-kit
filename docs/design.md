@@ -139,7 +139,7 @@ finalize_profile → 生成摘要，进入分析
 
 | Tool | 输入 | 输出 | 说明 |
 |------|------|------|------|
-| `list_company_jobs` | 无 | 企业源清单 | 查看可用 scraper 和参数 |
+| `list_data_sources` | 无 | 企业源清单 | 查看可用 scraper 和参数 |
 | `fetch_company_jobs` | company + params | 岗位列表（含薪资） | 实时抓取 |
 | `fetch_jd_detail` | url | JD 全文 | 获取岗位详情 |
 | `search_knowledge` | query | 本地资料 | 只查知识库，不联网 |

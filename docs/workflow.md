@@ -54,7 +54,7 @@
 
 | 工具 | 作用 |
 |------|------|
-| `list_company_jobs` | 查看可用企业数据源 |
+| `list_data_sources` | 查看可用企业数据源 |
 | `fetch_company_jobs` | 抓取真实岗位（含薪资范围） |
 | `fetch_jd_detail` | 获取 JD 全文 |
 | `search_knowledge` | 检索本地知识库 |
@@ -64,7 +64,7 @@
 ### 流程
 
 ```
-1. list_company_jobs()                              // 查看可用企业
+1. list_data_sources()                              // 查看可用企业
 2. fetch_company_jobs(company="bytedance", params='{"keyword":"AI Agent"}')  // 必须调用
 3. fetch_jd_detail(url="...")                       // 获取 JD 全文
 4. search_knowledge(query="AI Agent 面经")          // 补充本地资料

@@ -26,7 +26,7 @@ WELCOME_PROMPT = """\
    - 只有方向描述 → `intake(section="want", ...)`
    - 想找真实岗位做目标 → 走下面的数据链路
 4. 搜索真实数据（主动做）：
-   - `list_company_jobs` → 查看可用企业数据源和参数
+   - `list_data_sources` → 查看可用企业数据源和参数
    - `get_scraper_guide(company=...)` → 首次使用某源前，读取该源的完整教程
    - `fetch_company_jobs(company=..., params=...)` → 搜岗位（结果含薪资范围）
    - `fetch_jd_detail(url=...)` → 获取 JD 全文

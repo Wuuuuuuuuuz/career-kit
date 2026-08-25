@@ -57,6 +57,27 @@ def test_get_scraper_guide_tool():
     assert "可用数据源" in result
 
 
+def test_every_registered_scraper_declares_params():
+    """每个已注册的企业源必须在类上声明 PARAMS（参数唯一事实源）。
+
+    config.yaml 不再维护参数——list_data_sources 直接渲染类上的 PARAMS。
+    """
+    from src.scrapers.loader import get_scraper
+
+    for cid in _registered_company_ids():
+        scraper = get_scraper(cid)
+        assert scraper is not None, f"{cid} 无法实例化"
+        params = getattr(scraper, "PARAMS", None)
+        assert isinstance(params, dict) and params, (
+            f"{cid} 未声明 PARAMS 类属性（应包含 required/description），"
+            f"参考 _template/scraper.py"
+        )
+        for pname, pinfo in params.items():
+            assert isinstance(pinfo, dict) and "description" in pinfo, (
+                f"{cid}.PARAMS['{pname}'] 缺少 description"
+            )
+
+
 def test_knowledge_writer_does_not_mutate_input():
     """知识库写入不得污染调用方的原始结果 dict（写入到临时目录验证）。"""
     import tempfile

@@ -156,7 +156,7 @@ def test_mcp_tools_registered():
 
     tools = {t.name for t in mcp._tool_manager.list_tools()}
 
-    expected = ["list_company_jobs", "fetch_company_jobs", "fetch_jd_detail"]
+    expected = ["list_data_sources", "fetch_company_jobs", "fetch_jd_detail"]
     for t in expected:
         assert t in tools, f"{t} 未注册"
         print(f"[OK] {t} 已注册")

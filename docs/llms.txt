@@ -44,7 +44,7 @@ Career Kit 的核心优势是有**真实数据**，而不是凭空分析：
 
 | 工具 | 作用 | 调用时机 |
 |------|------|----------|
-| `list_company_jobs` | 列出可用企业数据源 | 需要真实数据时先调用 |
+| `list_data_sources` | 列出可用企业数据源 | 需要真实数据时先调用 |
 | `fetch_company_jobs` | 抓取企业岗位（含薪资） | 分析和规划前必须调用 |
 | `fetch_jd_detail` | 获取 JD 全文 | 深入分析某岗位时 |
 | `search_knowledge` | 检索本地知识库 | 查找已积累的资料 |
@@ -98,7 +98,7 @@ Career Kit 的核心优势是有**真实数据**，而不是凭空分析：
 ### 阶段 2：分析（必须先抓取真实数据）
 
 ```
-1. list_company_jobs()                              // 查看可用企业数据源
+1. list_data_sources()                              // 查看可用企业数据源
 2. fetch_company_jobs(company="bytedance", params='{"keyword":"AI Agent"}')  // 抓取真实岗位
 3. fetch_jd_detail(url="...")                       // 获取 JD 全文
 4. search_knowledge(query="AI Agent 面经")          // 查本地已积累资料
@@ -181,7 +181,7 @@ Career Kit 的核心优势是有**真实数据**，而不是凭空分析：
 1. start_session()
 2. intake(who/have/want)
 3. finalize_profile()
-4. list_company_jobs()                        // 查看可用企业数据源
+4. list_data_sources()                        // 查看可用企业数据源
 5. fetch_company_jobs(company=..., params=...)  // 抓取真实岗位（含薪资）
 6. fetch_jd_detail(url=...)                   // 获取 JD 全文
 7. analyze_gaps()

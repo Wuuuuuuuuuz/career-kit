@@ -1,19 +1,21 @@
 """{{COMPANY_NAME}} Scraper — 企业招聘数据源。
 
-实现者：复制此目录，修改 3 处即可。
+实现者：复制此目录，修改 4 处即可。
 
 快速开始：
 1. 将此目录复制为 src/scrapers/{company_name}/
-2. 修改 COMPANY_SLUG、COMPANY_NAME、BASE_URL
+2. 修改 COMPANY_SLUG、BASE_URL、PARAMS
 3. 实现 search() 和 get_detail()
-4. 在 config.yaml 注册（含 url_patterns）
-5. 提交 PR
+4. 在 config.yaml 注册（只需 name/module/class/description/url_patterns）
+5. 填写 guide.md 使用教程（LLM 运行时按需读取）
+6. 提交 PR
 
 框架自动处理：
-- 缓存（通过 self._make_cache("search" 或 "detail")）
+- 缓存（通过 self._make_cache("search" 或 "detail")，统一存 data/cache/）
 - 知识库写入（loader 层自动调用，无需手动）
 - URL 路由（通过 supports_url 或 config.yaml 的 url_patterns）
-- 输出校验（title 和 url 会自动补全）
+- 输出校验（title 和 url 会自动补全；错误条目原样上抛不会被伪装）
+- 参数清单渲染（list_data_sources 直接读取本类的 PARAMS）
 """
 
 from __future__ import annotations
@@ -33,6 +35,14 @@ class Scraper(CompanyScraper):
 
     COMPANY_SLUG = "{{COMPANY_NAME_EN}}"  # 英文标识，用于缓存目录和日志
     BASE_URL = "https://..."              # 官网地址
+
+    # 搜索参数定义（唯一事实源，list_data_sources 渲染给 LLM）
+    # 只声明 search() 实际消费的参数，键必须与 kwargs.get() 一致
+    PARAMS: dict[str, dict[str, Any]] = {
+        "keyword": {"required": True, "description": "搜索关键词"},
+        "city": {"required": False, "description": "城市名"},
+        "limit": {"required": False, "description": "返回数量上限，默认 20"},
+    }
 
     # 按需调整 TTL（秒）
     search_cache_ttl = 3600   # 搜索结果 1 小时

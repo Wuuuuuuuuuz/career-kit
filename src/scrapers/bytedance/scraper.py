@@ -51,6 +51,15 @@ class Scraper(CompanyScraper):
 
     COMPANY_SLUG = "bytedance"
 
+    # 搜索参数定义（唯一事实源，list_data_sources 渲染给 LLM）
+    PARAMS: dict[str, dict[str, Any]] = {
+        "keyword": {"required": False, "description": "搜索关键词（如 \"Python\"、\"AI Agent\"）"},
+        "city": {"required": False, "description": "城市名（如 \"北京\"、\"上海\"、\"深圳\"）"},
+        "job_type": {"required": False, "description": "岗位类别（研发/运营/产品/销售/设计/市场/游戏策划/教研教学）"},
+        "portal": {"required": False, "description": "experienced=社招(默认), campus=校招"},
+        "limit": {"required": False, "description": "返回数量上限，默认 20"},
+    }
+
     def supports_url(self, url: str) -> bool:
         return "jobs.bytedance.com" in url
 

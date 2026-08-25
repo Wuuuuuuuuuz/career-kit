@@ -25,7 +25,7 @@ finalize_profile()
 
 ```
 analyze_gaps()
-list_company_jobs()
+list_data_sources()
 fetch_company_jobs(company="boss", params='{"keyword":"AI Agent", "city":"上海"}')
 fetch_jd_detail(url="...")
 save_gap_analysis(gap_json='{

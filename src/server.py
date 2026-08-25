@@ -40,6 +40,7 @@ from .models import Adjustment, JourneyEntry
 from .tools.resume_parser import extract_text
 from .tools.session import get_welcome_message
 from .scrapers import list_scrapers, search_company_jobs, get_job_detail
+from .scrapers.loader import read_scraper_guide
 
 mcp = FastMCP("career-kit")
 
@@ -316,7 +317,7 @@ def analyze_gaps() -> str:
         ],
         "instructions": (
             "请按照上述方法论指引：\n"
-            "1. 先用 fetch_company_jobs 搜索目标企业的真实岗位（先 list_company_jobs 查看可用企业）\n"
+            "1. 先用 fetch_company_jobs 搜索目标企业的真实岗位（先 list_data_sources 查看可用企业）\n"
             "2. 用 fetch_jd_detail 获取 JD 全文和同背景案例\n"
             "3. 基于真实数据从简历过筛和面试通过两个维度分析差距\n"
             "4. 调用 save_gap_analysis(gap_json) 保存结构化结果"
@@ -838,21 +839,21 @@ def get_scraper_guide(company: str) -> str:
     了解该源能搜什么、参数语义、返回字段、登录要求和失败处理。
 
     Args:
-        company: 企业 ID（通过 list_company_jobs 获取）
+        company: 企业 ID（通过 list_data_sources 获取）
             示例：bytedance
     """
-    guide_path = Path(__file__).parent / "scrapers" / company / "guide.md"
-    if not guide_path.exists():
+    guide = read_scraper_guide(company)
+    if guide is None:
         available = ", ".join(s["id"] for s in list_scrapers()) or "无"
         return (
             f"「{company}」没有使用指南或不是已注册的数据源。\n"
             f"可用数据源：{available}"
         )
-    return guide_path.read_text(encoding="utf-8")
+    return guide
 
 
 @mcp.tool()
-def list_company_jobs() -> str:
+def list_data_sources() -> str:
     """列出所有已注册的企业招聘数据源。
 
     何时调用：第一次需要真实岗位/面经数据时先调用本工具，
@@ -874,8 +875,8 @@ def list_company_jobs() -> str:
         if params:
             lines.append("  支持的搜索参数：")
             for pname, pinfo in params.items():
-                req = "（必填）" if pinfo.get("required") else "（可选）"
-                desc = pinfo.get("description", "")
+                req = "（必填）" if isinstance(pinfo, dict) and pinfo.get("required") else "（可选）"
+                desc = pinfo.get("description", "") if isinstance(pinfo, dict) else str(pinfo)
                 lines.append(f"    - {pname}{req}: {desc}")
 
         lines.append(f"  详细用法：get_scraper_guide(company=\"{s['id']}\")")
@@ -892,10 +893,10 @@ def fetch_company_jobs(company: str, params: str = "{}") -> str:
     """搜索指定企业的岗位或面经（实时抓取真实数据）。
 
     何时调用：需要真实岗位数据（差距分析、路线图、薪资行情）或面经数据时调用。
-    前置条件：先调用 list_company_jobs 查看该企业支持的参数，params 只传列出的参数。
+    前置条件：先调用 list_data_sources 查看该企业支持的参数，params 只传列出的参数。
 
     Args:
-        company: 企业 ID（通过 list_company_jobs 获取）
+        company: 企业 ID（通过 list_data_sources 获取）
             示例：bytedance
         params: 搜索参数 JSON 字符串（各企业支持的参数不同）
             示例：'{"keyword":"AI Agent", "city":"北京"}'
@@ -935,7 +936,7 @@ def fetch_company_jobs(company: str, params: str = "{}") -> str:
     if count == 0:
         return (
             f"「{company_name}」未找到匹配的岗位。\n\n"
-            "建议：1) 换更宽泛的关键词重试 2) 尝试其他企业数据源（list_company_jobs 查看）"
+            "建议：1) 换更宽泛的关键词重试 2) 尝试其他企业数据源（list_data_sources 查看）"
         )
 
     # 部分失败的警告信息

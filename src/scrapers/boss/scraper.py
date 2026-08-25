@@ -152,6 +152,16 @@ class Scraper(CompanyScraper):
     search_cache_ttl = 3600
     detail_cache_ttl = 86400
 
+    # 搜索参数定义（唯一事实源，list_data_sources 渲染给 LLM）
+    PARAMS: dict[str, dict[str, Any]] = {
+        "keyword": {"required": True, "description": "搜索关键词（如 \"Python\"、\"前端\"、\"AI\"）"},
+        "city": {"required": False, "description": "城市名（如 \"北京\"、\"上海\"、\"全国\"）或城市代码"},
+        "experience": {"required": False, "description": "经验要求（如 \"1-3年\"、\"3-5年\"、\"不限\"）"},
+        "degree": {"required": False, "description": "学历要求（如 \"本科\"、\"硕士\"、\"不限\"）"},
+        "salary": {"required": False, "description": "薪资范围（如 \"15-25K\"、\"30-50K\"）"},
+        "limit": {"required": False, "description": "返回数量上限，默认 20"},
+    }
+
     def supports_url(self, url: str) -> bool:
         return "zhipin.com" in url
 

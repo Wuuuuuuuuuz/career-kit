@@ -12,6 +12,19 @@
 
 ---
 
+## 工程债与近期待办（2026-08-26 梳理）
+
+| # | 待办 | 说明 | 优先级 |
+|---|------|------|--------|
+| T1 | dashboard.html 接通真实数据 | 当前内置 mock 数据；数据实际在 profile.json 的 tasks/checkins/adjustments 字段，需实现导出或让页面直接读档案 | P1 |
+| T2 | server.py 按工作流拆分 | 1450+ 行、32 个工具全部内联；建议拆为 tools/profile_tools.py、analysis_tools.py、task_tools.py 等模块，server.py 只做注册 | P1 |
+| T3 | test_mcp_client 需要 pytest-asyncio | 唯一持续失败的测试，属环境缺依赖；加入 dev 依赖组并安装 | P2 |
+| T4 | tests/career-kit-test/ 目录清理 | 嵌套克隆残留，二进制被进程锁定无法删除（已 gitignore）；关闭占用进程后手动删除 | P2 |
+| T5 | BOSS直聘登录态初始化体验 | 首次使用需手动跑 `python -m src.scrapers.boss.login`；考虑提供 MCP 内引导或把该说明前置到 get_scraper_guide 的错误返回里 | P2 |
+| T6 | 语义检索升级 | 关键词检索 → sentence-transformers 本地模型，见 roadmap.md Phase 4 | P2 |
+
+---
+
 ## 方向零：职业教练系统（Phase 2）✅ 已完成
 
 数据模型（Task/CheckIn/Adjustment）、任务管理、洞察引擎、MCP Tools 集成、

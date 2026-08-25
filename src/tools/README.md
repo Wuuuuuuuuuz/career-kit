@@ -17,7 +17,7 @@ Career Kit 提供的 MCP 工具，用于职业规划全流程。
 
 | 工具 | 文件 | 作用 |
 |------|------|------|
-| `list_company_jobs` | scrapers/loader.py | 列出可用企业数据源及参数 |
+| `list_data_sources` | scrapers/loader.py | 列出可用企业数据源及参数 |
 | `get_scraper_guide` | server.py（读各包 guide.md） | 读取指定数据源使用教程 |
 | `fetch_company_jobs` | scrapers/loader.py | 抓取企业岗位（含薪资） |
 | `fetch_jd_detail` | scrapers/loader.py | 获取 JD 全文 |

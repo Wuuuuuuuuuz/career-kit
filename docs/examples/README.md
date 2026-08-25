@@ -18,7 +18,7 @@
 4. intake(section="want", data='{"target_role":"AI Agent 工程师", "salary":"20k-30k", "city":"上海"}')
 5. finalize_profile()
 6. analyze_gaps()
-7. list_company_jobs()
+7. list_data_sources()
 8. fetch_company_jobs(company="bytedance", params='{"keyword":"AI Agent"}')
 9. save_gap_analysis(gap_json='{"match_score":65, "skill_gaps":[{"skill":"LLM", "source":"BOSS直聘 JD"}, ...]}')
 10. generate_roadmap()

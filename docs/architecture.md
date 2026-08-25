@@ -99,7 +99,7 @@ graph LR
 ### 4.2 分析规划阶段
 
 ```
-list_company_jobs → fetch_company_jobs → fetch_jd_detail
+list_data_sources → fetch_company_jobs → fetch_jd_detail
     ↓ (真实数据)
 analyze_gaps() → save_gap_analysis → generate_roadmap → 细化到任务
 ```

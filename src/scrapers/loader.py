@@ -105,17 +105,45 @@ def get_scraper(company: str) -> CompanyScraper | None:
 
 
 def list_scrapers() -> list[dict[str, Any]]:
-    """列出所有已注册的企业 Scraper。"""
+    """列出所有已注册的企业 Scraper。
+
+    参数定义以 scraper 类的 PARAMS 类属性为唯一事实源；
+    未声明 PARAMS 的旧式 scraper 回退到 config.yaml 的 params 段。
+    """
     config = _load_config()
     result = []
     for company_id, info in config.get("scrapers", {}).items():
+        params = info.get("params") or {}
+        source = "config"
+
+        # 类属性 PARAMS 优先（单一事实源在代码里，随实现同步演化）
+        cls = _load_scraper_class(company_id)
+        if cls is not None and getattr(cls, "PARAMS", None):
+            params = cls.PARAMS
+            source = "class"
+
         result.append({
             "id": company_id,
             "name": info.get("name", company_id),
             "description": info.get("description", ""),
-            "params": info.get("params", {}),
+            "params": params,
+            "params_source": source,
         })
     return result
+
+
+def read_scraper_guide(company: str) -> str | None:
+    """读取指定企业源的 guide.md 使用教程。
+
+    教程随 scraper 包分发（唯一事实源），未提供时返回 None。
+    """
+    guide_path = Path(__file__).parent / company / "guide.md"
+    if not guide_path.exists():
+        return None
+    try:
+        return guide_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 def get_scraper_for_url(url: str) -> CompanyScraper | None:

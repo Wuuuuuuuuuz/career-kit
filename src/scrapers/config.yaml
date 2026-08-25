@@ -1,93 +1,41 @@
 # 企业 JD Scraper 注册表
 #
 # 添加新企业：
-# 1. 在 scrapers/ 下新建目录，实现 CompanyScraper
-# 2. 在此文件注册
+# 1. 在 scrapers/ 下新建目录，实现 CompanyScraper（含 PARAMS 类属性和 guide.md）
+# 2. 在此文件注册（只需以下字段）
 # 3. PR 提交
 #
 # 字段说明：
 #   name: 企业名称（显示用）
 #   module: Python 模块路径（相对于 src/scrapers/）
 #   class: Scraper 类名（默认 Scraper）
-#   description: 企业描述（可选）
-#   params: 支持的搜索参数（可选，供 LLM 参考）
+#   description: 企业描述（可选，一句话说明数据类型和特点）
+#   url_patterns: 域名列表，用于 fetch_jd_detail 的 URL 自动路由
+#
+# 注意：搜索参数不再在此定义——以各 scraper 类的 PARAMS 类属性为唯一事实源，
+# list_data_sources 会自动读取并渲染给 LLM。
 
 scrapers:
   boss:
     name: BOSS直聘
     module: boss.scraper
     class: Scraper
-    description: BOSS直聘（zhipin.com），需要首次登录后缓存登录态
+    description: BOSS直聘（zhipin.com），需要首次登录后缓存登录态，岗位含明确薪资范围
     url_patterns:
       - "zhipin.com"
-    params:
-      keyword:
-        description: 搜索关键词（如 "Python"、"前端"、"AI"）
-        required: true
-      city:
-        description: 城市名（如 "北京"、"上海"、"全国"）或城市代码
-        required: false
-      experience:
-        description: 经验要求（如 "1-3年"、"3-5年"、"不限"）
-        required: false
-      degree:
-        description: 学历要求（如 "本科"、"硕士"、"不限"）
-        required: false
-      salary:
-        description: 薪资范围（如 "15-25K"、"30-50K"）
-        required: false
-      limit:
-        description: 返回数量上限，默认 20
-        required: false
 
   bytedance:
     name: 字节跳动
     module: bytedance.scraper
     class: Scraper
-    description: 字节跳动官方招聘（jobs.bytedance.com），支持社招/校招
+    description: 字节跳动官方招聘（jobs.bytedance.com），支持社招/校招，不公开薪资
     url_patterns:
       - "jobs.bytedance.com"
-    params:
-      keyword:
-        description: 搜索关键词（如 "Python"、"AI Agent"）
-        required: false
-      city:
-        description: 城市名（如 "北京"、"上海"、"深圳"）
-        required: false
-      job_type:
-        description: 岗位类别（研发/运营/产品/销售/设计/市场/游戏策划/教研教学）
-        required: false
-      portal:
-        description: "experienced=社招(默认), campus=校招"
-        required: false
-      limit:
-        description: 返回数量上限，默认 20
-        required: false
 
   nowcoder:
     name: 牛客网
     module: nowcoder.scraper
     class: Scraper
-    description: 牛客网面经分享平台（nowcoder.com），搜索和获取面经数据
+    description: 牛客网面经分享平台（nowcoder.com），面试经验与面试题数据源
     url_patterns:
       - "nowcoder.com"
-    data_type: interviews
-    params:
-      keyword:
-        description: 搜索关键词（如 "面经"、"AI Agent"、"Agent 开发"）
-        required: false
-      filter_company:
-        description: 按公司筛选（如 "字节跳动"、"腾讯"），会自动拼接到搜索词
-        required: false
-      is_intern:
-        description: 是否搜索实习岗位（true 时追加"实习"关键词）
-        required: false
-      order:
-        description: "排序方式：create=最新(默认), quality=最热"
-        required: false
-      page:
-        description: 页码，默认 1
-        required: false
-      limit:
-        description: 返回数量上限，默认 20
-        required: false
