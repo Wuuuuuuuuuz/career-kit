@@ -122,7 +122,10 @@ def login() -> bool:
     try:
         from patchright.sync_api import sync_playwright
     except ImportError:
-        print("[!] 缺少依赖：pip install patchright==1.62.1")
+        print("[!] 缺少依赖 patchright（反检测浏览器驱动）。请在本项目目录执行：\n"
+              "    pip install -e .\n"
+              "（pyproject.toml 已声明 patchright==1.62.1 与 iv8，一键安装全部依赖）\n"
+              "或单独安装：pip install patchright==1.62.1")
         return False
 
     channel = _detect_channel()

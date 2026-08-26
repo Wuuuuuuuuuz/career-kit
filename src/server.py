@@ -212,8 +212,28 @@ def finalize_profile() -> str:
     profile.summary = "；".join(parts) if parts else "（档案为空）"
     save_profile(profile)
 
+    # 摸排提醒（BUG-015）：have 有技能但没有任何证据/置信度标注时，先摸真实水平再放行。
+    # 简历有美化成分——按简历字面水平做差距分析会系统性失真。
+    have = profile.have or {}
+    skills = have.get("skills", [])
+    has_evidence = bool(
+        have.get("evidence")
+        or have.get("skill_evidence")
+        or have.get("capability_evidence")
+        or any(isinstance(s, dict) and (s.get("evidence") or s.get("confidence")) for s in skills)
+    )
+    probe_reminder = ""
+    if skills and not has_evidence:
+        probe_reminder = (
+            "\n\n⚠️ 摸排提醒：have 中的技能没有任何证据/置信度标注。\n"
+            "在继续 analyze_gaps 之前，请先对关键技能逐项追问证据：\n"
+            "  做过什么项目？现场讲一个难点？实际掌握到什么程度？\n"
+            "然后把证据（evidence）与置信度（confidence）补充进 have 后再进入分析。\n"
+            "原因：简历有美化成分，基于美化后的水平做差距分析会严重失真。"
+        )
+
     return (
-        f"档案已确认。\n\n摘要：{profile.summary}\n\n"
+        f"档案已确认。\n\n摘要：{profile.summary}{probe_reminder}\n\n"
         "可以开始分析差距了，请调用 analyze_gaps。"
     )
 
@@ -832,6 +852,12 @@ async def fetch_jd_detail(url: str, company: str = "") -> str:
         lines.append(result["benefits"])
         lines.append("")
 
+    # 面经类详情（nowcoder 等）正文在 content 字段——此前未渲染导致「标题+公司，无正文」
+    if result.get("content"):
+        lines.append("### 面经内容")
+        lines.append(result["content"])
+        lines.append("")
+
     lines.append("如需导入此 JD 进行差距分析，请调用 import_jd(jd_text=...)。")
     return "\n".join(lines)
 
@@ -915,6 +941,26 @@ def get_next_tasks() -> str:
     view = current_phase_view(profile)
 
     lines = []
+
+    # 全流程概览（BUG-016）：所有阶段 + 完成状态 + 当前定位，让用户有全局地图
+    roadmap = profile.plan.get("roadmap", profile.plan)
+    phases = roadmap.get("phases", []) if isinstance(roadmap, dict) else []
+    if phases:
+        overview = []
+        for idx, phase in enumerate(phases):
+            phase_id = phase.get("id") or f"phase_{idx + 1}"
+            phase_tasks = [t for t in profile.tasks if t.phase_id == phase_id]
+            done = sum(
+                1 for t in phase_tasks
+                if t.status in ("completed", "skipped")
+            )
+            total = len(phase_tasks)
+            pct = int(done / total * 100) if total else 0
+            marker = "⬅ 当前" if view and view["phase_id"] == phase_id else ("✓" if done == total else "·")
+            overview.append(f"{marker} {phase.get('name', phase_id)}（{done}/{total}，{pct}%）")
+        lines.append("## 🗺️ 全流程")
+        lines.append("\n".join(f"  {o}" for o in overview))
+        lines.append("")
 
     if view is None:
         lines.append("🎉 所有阶段已完成！建议回顾目标，规划下一步方向。")

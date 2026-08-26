@@ -216,6 +216,64 @@ def test_workflow_status_goal_change_grading(temp_profile):
     assert "检测到用户目标（want）" in st2 and "重新调用 analyze_gaps" in st2
 
 
+def test_fetch_jd_detail_renders_interview_content(monkeypatch):
+    """BUG-014 回归：面经详情必须渲染 content 字段，不能只有标题+公司。"""
+    import asyncio
+
+    import src.server as server_module
+
+    fake = {
+        "title": "字节跳动 火山引擎方舟一面面经",
+        "company": "字节跳动",
+        "content": "【精品面经】面试时长约 57 分钟……",
+    }
+    monkeypatch.setattr(server_module, "get_job_detail", lambda url, company=None: fake)
+
+    out = asyncio.run(server_module.fetch_jd_detail("https://www.nowcoder.com/discuss/123"))
+    assert "### 面经内容" in out
+    assert "面试时长约 57 分钟" in out
+
+
+def test_finalize_profile_probes_when_no_evidence(temp_profile):
+    """BUG-015 回归：have 有技能但无证据时，finalize 返回摸排提醒。"""
+    from src.server import finalize_profile, intake
+
+    intake("who", '{"name": "张三"}')
+    intake("want", '{"target_role": "AI 工程师"}')
+    intake("have", '{"skills": ["Python", "LangChain"], "experience": "2年"}')
+
+    out = finalize_profile()
+    assert "摸排提醒" in out and "confidence" in out
+
+    # 补上证据后不再提醒
+    intake("have", '{"skill_evidence": [{"skill": "Python", "evidence": "爬虫项目", "confidence": "high"}]}')
+    out2 = finalize_profile()
+    assert "摸排提醒" not in out2
+
+
+def test_get_next_tasks_shows_full_overview(temp_profile):
+    """BUG-016 回归：get_next_tasks 附带全流程概览（所有阶段+当前定位）。"""
+    from src.models import Task
+    from src.server import get_next_tasks
+
+    p = profile_module.load_profile()
+    p.plan = {"roadmap": {"phases": [
+        {"id": "phase_1", "name": "基础巩固", "milestones": []},
+        {"id": "phase_2", "name": "项目实战", "milestones": []},
+    ]}}
+    p.tasks = [
+        Task(id="task_001", name="学Python", phase_id="phase_1", status="completed"),
+        Task(id="task_002", name="学LangChain", phase_id="phase_1"),
+        Task(id="task_003", name="做RAG项目", phase_id="phase_2"),
+    ]
+    profile_module.save_profile(p)
+
+    out = get_next_tasks()
+    assert "全流程" in out
+    assert "基础巩固" in out and "项目实战" in out
+    assert "⬅ 当前" in out  # 当前阶段有定位标记
+
+
 def test_apply_insight_end_to_end(temp_profile):
     """BUG-005 回归：apply_insight 可导入、可执行、调整可落地。"""
     from src.models import Task
