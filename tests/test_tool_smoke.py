@@ -162,6 +162,23 @@ def test_import_jd_rejects_empty_target(temp_profile):
     assert not profile_module.load_profile().target_jd
 
 
+def test_import_jd_rejects_blank_and_plaintext(temp_profile):
+    """BUG-011 回归：空串/纯文本/非对象 JSON 一律拒绝，绝不静默 {"raw": text} 入库。"""
+    from src.server import import_jd
+
+    cases = ["", "   ", "随便写的文本不是JSON", "[]"]
+    for bad in cases:
+        result = json.loads(import_jd(jd_text=bad))
+        assert result.get("isError") is True, f"输入 {bad!r} 应被拒绝"
+        assert result["code"] == "INVALID_JSON", f"输入 {bad!r} 错误码不符"
+    assert not profile_module.load_profile().target_jd
+
+    # 合法结构化 JSON 仍可正常导入
+    ok_text = import_jd(jd_text='{"company": "测试公司", "role": "AI 工程师"}')
+    assert "已导入目标 JD" in ok_text
+    assert profile_module.load_profile().target_jd["company"] == "测试公司"
+
+
 def test_import_jd_file_no_copyable_example(temp_profile):
     """BUG-010 回归：import_jd_file 返回值不得包含可被直接复制的具体示例。"""
     from src.server import import_jd_file

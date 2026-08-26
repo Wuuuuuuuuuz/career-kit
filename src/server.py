@@ -231,36 +231,52 @@ def import_jd(jd_text: str) -> str:
     """导入目标岗位的 JD（职位描述）。
 
     Args:
-        jd_text: JD 文本内容
+        jd_text: JD 的结构化 JSON 文本
+            示例：'{"company":"字节跳动","role":"AI Agent 工程师","requirements":["LangGraph","RAG"]}'
+            空串 / 非 JSON / 非对象输入会被拒绝，不会污染档案。
     """
-    # 将 JD 存储到 profile 的 target_jd 字段
-    # LLM 应该先解析 JD 再调用此工具，所以这里直接存储
-    profile = load_profile()
+    # target_jd 只接受结构化 JSON（BUG-010/BUG-011）：
+    # 空串、纯文本、非 dict 一律拒绝，绝不静默以 {"raw": text} 入库
+    if not jd_text or not jd_text.strip():
+        return error_response(
+            "INVALID_JSON",
+            "JD 内容为空。请提供目标岗位的 JD 文本后重试。",
+            {"received": ""},
+        )
 
-    # 如果 jd_text 是 JSON，直接存储；否则存为 raw
     try:
         jd_data = json.loads(jd_text)
-        if not isinstance(jd_data, dict):
-            jd_data = {"raw": jd_text}
-    except json.JSONDecodeError:
-        jd_data = {"raw": jd_text}
-
-    # 最小校验（BUG-010）：拒绝空/无岗位业务字段的 JD，防止示例或垃圾内容
-    # 污染 target_jd 并让 get_workflow_status 持续误报目标变更
-    if isinstance(jd_data, dict) and "raw" not in jd_data:
-        biz_fields = (
-            "company", "role", "position", "title", "job",
-            "requirements", "description", "job_description",
-            "responsibilities", "responsibility",
+    except json.JSONDecodeError as exc:
+        return error_response(
+            "INVALID_JSON",
+            "JD 不是合法 JSON。请提供结构化 JD："
+            '{"company":..., "role":..., "requirements":[...]}（至少含其中一项）；'
+            "或将 JD 文件交给 import_jd_file 解析。",
+            {"raw": jd_text[:200], "parse_error": str(exc)},
         )
-        if not any(jd_data.get(k) for k in biz_fields):
-            return error_response(
-                "INVALID_JSON",
-                "target_jd 缺少岗位关键字段（company/role/requirements/description 等），拒绝导入。"
-                "请基于真实 JD 内容填充字段后再调用 import_jd。",
-                {"received": jd_text[:200]},
-            )
 
+    if not isinstance(jd_data, dict):
+        return error_response(
+            "INVALID_JSON",
+            f"JD JSON 必须是对象（dict），收到的是 {type(jd_data).__name__}。",
+            {"received": jd_text[:200]},
+        )
+
+    # 最小校验（BUG-010）：缺岗位业务字段的 JD 拒绝导入，防示例/垃圾污染 target_jd
+    biz_fields = (
+        "company", "role", "position", "title", "job",
+        "requirements", "description", "job_description",
+        "responsibilities", "responsibility",
+    )
+    if not any(jd_data.get(k) for k in biz_fields):
+        return error_response(
+            "INVALID_JSON",
+            "target_jd 缺少岗位关键字段（company/role/requirements/description 等），拒绝导入。"
+            "请基于真实 JD 内容填充字段后再调用 import_jd。",
+            {"received": jd_text[:200]},
+        )
+
+    profile = load_profile()
     profile.target_jd = jd_data
     profile.section_updated_at["target_jd"] = datetime.now().isoformat()
     profile.touch()
