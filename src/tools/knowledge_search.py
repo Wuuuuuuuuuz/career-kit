@@ -105,6 +105,6 @@ def search_knowledge(query: str, limit: int = 5) -> dict[str, Any]:
     results.sort(key=lambda x: x["relevance"], reverse=True)
     return {
         "results": results[:limit],
-        "count": len(results[:limit]),
+        "count": len(results),  # 真实命中数，而非截断后的条数（显示「找到 N 条」时不能骗人）
         "knowledge_dir": str(KNOWLEDGE_DIR),
     }
