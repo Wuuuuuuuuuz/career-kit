@@ -1,5 +1,6 @@
 """Career Kit MCP 服务器——入口。"""
 
+import asyncio
 import json
 import warnings
 from datetime import datetime
@@ -325,31 +326,66 @@ def save_gap_analysis(gap_json: str) -> str:
     Args:
         gap_json: 差距分析的 JSON 字符串
 
-    Schema:
+    Schema（与 sop/resume_screening.yaml、sop/interview_prep.yaml 的 output_schema 一致）:
         {
-            "match_score": 65,           // 匹配度评分（0-100）
-            "skill_gaps": [              // 技能差距列表
+            "match_score": 65,            // 匹配度评分（0-100）
+            "match_level": "partial_match",
+            "strengths": [                // 优势（对象数组）
                 {
-                    "skill": "TypeScript",      // 技能名称
-                    "priority": "high",         // 优先级：high/medium/low
-                    "current_level": "无",      // 当前水平
-                    "target_level": "熟练",     // 目标水平
-                    "source": "BOSS直聘 JD"     // 数据来源
+                    "area": "前端开发",             // 领域
+                    "description": "1年经验",       // 描述
+                    "resume_highlight": "...",      // 可选：简历怎么写
+                    "interview_talk": "..."         // 可选：面试怎么讲
                 }
             ],
-            "priority_actions": [        // 优先行动项
-                "学习 TypeScript 基础",
-                "完成 TypeScript 项目"
+            "resume_optimization": {      // 简历过筛维度
+                "ats_keywords": ["Python", "Agent"],
+                "missing_keywords": ["RAG"],
+                "highlight_projects": [
+                    {"project": "...", "how_to_package": "...", "quantified_result": "..."}
+                ],
+                "resume_tips": ["..."],
+                "missing_experiences": [
+                    {"experience": "...", "how_to_create": "..."}
+                ]
+            },
+            "interview_preparation": {    // 面试通过维度
+                "must_prepare": [
+                    {"topic": "...", "type": "八股|项目|场景", "priority": "high",
+                     "estimated_time": "...", "prepare_advice": "..."}
+                ],
+                "project_deep_dive": [
+                    {"project": "...", "likely_questions": ["..."],
+                     "key_points": ["..."], "star_story": "S:... T:... A:... R:..."}
+                ],
+                "system_design_topics": [{"topic": "...", "framework": "..."}],
+                "behavioral_questions": [{"question": "...", "story_template": "..."}],
+                "study_plan": {"week_1": ["..."], "week_2": ["..."]}
+            },
+            "skill_gaps": [               // 技能差距（对象数组）
+                {
+                    "skill": "TypeScript",
+                    "priority": "high",          // high/medium/low
+                    "current_level": "无",
+                    "required_level": "熟练",    // 注意：字段名是 required_level
+                    "is_hidden": false,          // 可选：true 表示 JD 未写但实际考核
+                    "how_to_improve": "...",
+                    "source": "BOSS直聘 JD"      // 数据来源，必填
+                }
             ],
-            "strengths": [               // 优势
-                "有前端开发经验"
-            ]
+            "priority_actions": [         // 优先行动项（对象数组）
+                {"action": "学习 TypeScript 基础", "timeline": "...", "impact": "...", "difficulty": "..."}
+            ],
+            "market_context": "..."       // 市场背景（来自真实抓取数据汇总）
         }
     """
     try:
         gap_data = _parse_json_param(gap_json, "差距分析")
     except InvalidJsonError as exc:
         return error_response(exc.code, exc.message, exc.details)
+
+    # 先生成报告——格式非法时在此暴露，避免把半成品写进档案
+    report = format_gap_report(gap_data)
 
     profile = load_profile()
     profile.gap = gap_data
@@ -363,9 +399,6 @@ def save_gap_analysis(gap_json: str) -> str:
         decision="用户确认差距分析",
     ))
     save_profile(profile)
-
-    # 格式化报告
-    report = format_gap_report(gap_data)
 
     return _json({
         "message": (
@@ -628,7 +661,7 @@ def list_data_sources() -> str:
 
 
 @mcp.tool()
-def fetch_company_jobs(company: str, params: str = "{}") -> str:
+async def fetch_company_jobs(company: str, params: str = "{}") -> str:
     """搜索指定企业的岗位或面经（实时抓取真实数据）。
 
     何时调用：需要真实岗位数据（差距分析、路线图、薪资行情）或面经数据时调用。
@@ -654,7 +687,9 @@ def fetch_company_jobs(company: str, params: str = "{}") -> str:
             {"raw": params[:200]},
         )
 
-    result = search_company_jobs(company, **params_dict)
+    # 抓取是阻塞 IO（含 Playwright 同步 API），移入工作线程执行，
+    # 避免在事件循环线程内触发 "Sync API inside asyncio loop" 崩溃
+    result = await asyncio.to_thread(search_company_jobs, company, **params_dict)
 
     if result.get("error"):
         return error_response(
@@ -712,7 +747,7 @@ def fetch_company_jobs(company: str, params: str = "{}") -> str:
 
 
 @mcp.tool()
-def fetch_jd_detail(url: str, company: str = "") -> str:
+async def fetch_jd_detail(url: str, company: str = "") -> str:
     """获取岗位详情或面经全文（JD 完整描述、任职要求）。
 
     何时调用：fetch_company_jobs 结果中某个岗位/面经需要深入分析时调用。
@@ -726,7 +761,8 @@ def fetch_jd_detail(url: str, company: str = "") -> str:
         岗位：标题、公司、地点、薪资（如有）、岗位描述全文、任职要求。
         面经：标题、面试问题与经验全文。
     """
-    result = get_job_detail(url, company if company else None)
+    # 同 fetch_company_jobs：阻塞抓取移入工作线程，规避事件循环内的同步 Playwright
+    result = await asyncio.to_thread(get_job_detail, url, company if company else None)
 
     if result.get("error"):
         return error_response("ANALYSIS_FAILED", result["error"], {"url": url})
@@ -1013,11 +1049,9 @@ def apply_insight(insight_json: str) -> str:
             "user_message": "给用户的消息"
         }
     """
-    from .models import Adjustment
     from .tools.insight import (
         apply_adjustment,
         format_insight_report,
-        parse_insight_response,
     )
 
     profile = load_profile()

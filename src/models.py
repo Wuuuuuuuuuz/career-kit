@@ -68,7 +68,7 @@ class Adjustment(BaseModel):
     """调整记录。"""
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     trigger: str = ""
-    trigger_type: str = ""  # stage_audit | event | proactive
+    trigger_type: str = ""  # stage_audit | event（proactive 已随时间概念退场移除）
     reason: str = ""
     changes: list[dict[str, Any]] = Field(default_factory=list)
     approved: bool = True

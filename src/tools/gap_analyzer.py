@@ -12,16 +12,24 @@ from typing import Any
 def format_gap_report(gap: dict[str, Any]) -> str:
     """格式化差距报告为可读文本。
 
+    对 LLM 退化的字符串条目做兼容渲染，不抛异常。
+
     Args:
-        gap: parse_gap_analysis 返回的结构化数据
+        gap: 结构化差距数据（save_gap_analysis 的入参）
 
     Returns:
         格式化的文本报告
     """
     lines = []
 
-    # 匹配度评分
-    score = gap.get("match_score", 0)
+    # 匹配度评分（容忍 LLM 给出非数字类型）
+    raw_score = gap.get("match_score", 0)
+    try:
+        score = int(raw_score)
+        score = max(0, min(100, score))
+    except (TypeError, ValueError):
+        score = None
+
     level = gap.get("match_level", "")
     level_text = {
         "strong_match": "强烈匹配 ⭐⭐⭐⭐⭐",
@@ -30,9 +38,12 @@ def format_gap_report(gap: dict[str, Any]) -> str:
         "weak_match": "匹配度低 ⭐⭐",
     }.get(level, "")
 
-    score_bar = "█" * (score // 5) + "░" * (20 - score // 5)
-    lines.append(f"## 匹配度评分：{score}/100 {level_text}")
-    lines.append(f"[{score_bar}]")
+    if score is None:
+        lines.append(f"## 匹配度评分：{raw_score!r} {level_text}")
+    else:
+        score_bar = "█" * (score // 5) + "░" * (20 - score // 5)
+        lines.append(f"## 匹配度评分：{score}/100 {level_text}")
+        lines.append(f"[{score_bar}]")
     lines.append("")
 
     # === 优势 ===
@@ -40,11 +51,14 @@ def format_gap_report(gap: dict[str, Any]) -> str:
     if strengths:
         lines.append("## ✅ 你的优势")
         for s in strengths:
-            lines.append(f"- **{s.get('area', '')}**：{s.get('description', '')}")
-            if s.get('resume_highlight'):
-                lines.append(f"  - 简历怎么写：{s['resume_highlight']}")
-            if s.get('interview_talk'):
-                lines.append(f"  - 面试怎么讲：{s['interview_talk']}")
+            if isinstance(s, dict):
+                lines.append(f"- **{s.get('area', '')}**：{s.get('description', '')}")
+                if s.get('resume_highlight'):
+                    lines.append(f"  - 简历怎么写：{s['resume_highlight']}")
+                if s.get('interview_talk'):
+                    lines.append(f"  - 面试怎么讲：{s['interview_talk']}")
+            else:
+                lines.append(f"- {s}")
         lines.append("")
 
     # === 简历优化（简历过筛） ===
@@ -162,15 +176,19 @@ def format_gap_report(gap: dict[str, Any]) -> str:
     if skill_gaps:
         lines.append("## 📚 技能差距")
 
-        explicit = [g for g in skill_gaps if not g.get('is_hidden')]
-        hidden = [g for g in skill_gaps if g.get('is_hidden')]
+        # 兼容字符串条目（LLM 输出退化时）
+        dict_gaps = [g for g in skill_gaps if isinstance(g, dict)]
+        str_gaps = [g for g in skill_gaps if not isinstance(g, dict)]
+
+        explicit = [g for g in dict_gaps if not g.get('is_hidden')]
+        hidden = [g for g in dict_gaps if g.get('is_hidden')]
 
         if explicit:
             lines.append("### 显性要求（JD 上写的）")
             for priority in ['high', 'medium', 'low']:
                 icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}[priority]
                 for g in [g for g in explicit if g.get('priority') == priority]:
-                    lines.append(f"- {icon} **{g.get('skill', '')}**：{g.get('current_level', '?')} → {g.get('required_level', '?')}")
+                    lines.append(f"- {icon} **{g.get('skill', '')}**：{g.get('current_level', '?')} → {g.get('required_level', g.get('target_level', '?'))}")
                     if g.get('how_to_improve'):
                         lines.append(f"  - 提升建议：{g['how_to_improve']}")
 
@@ -179,9 +197,12 @@ def format_gap_report(gap: dict[str, Any]) -> str:
             lines.append("### 隐性要求（JD 没写但实际考核的）")
             for g in hidden:
                 priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(g.get('priority'), '⚪')
-                lines.append(f"- {priority_icon} **{g.get('skill', '')}**：{g.get('current_level', '?')} → {g.get('required_level', '?')}")
+                lines.append(f"- {priority_icon} **{g.get('skill', '')}**：{g.get('current_level', '?')} → {g.get('required_level', g.get('target_level', '?'))}")
                 if g.get('how_to_improve'):
                     lines.append(f"  - 提升建议：{g['how_to_improve']}")
+
+        for s in str_gaps:
+            lines.append(f"- {s}")
         lines.append("")
 
     # === 优先行动项 ===
@@ -189,13 +210,16 @@ def format_gap_report(gap: dict[str, Any]) -> str:
     if actions:
         lines.append("## 🚀 优先行动项")
         for i, a in enumerate(actions, 1):
-            lines.append(f"{i}. **{a.get('action', '')}**")
-            if a.get('timeline'):
-                lines.append(f"   - 时间：{a['timeline']}")
-            if a.get('impact'):
-                lines.append(f"   - 影响：{a['impact']}")
-            if a.get('difficulty'):
-                lines.append(f"   - 难度：{a['difficulty']}")
+            if isinstance(a, dict):
+                lines.append(f"{i}. **{a.get('action', a.get('description', ''))}**")
+                if a.get('timeline'):
+                    lines.append(f"   - 时间：{a['timeline']}")
+                if a.get('impact'):
+                    lines.append(f"   - 影响：{a['impact']}")
+                if a.get('difficulty'):
+                    lines.append(f"   - 难度：{a['difficulty']}")
+            else:
+                lines.append(f"{i}. **{a}**")
         lines.append("")
 
     # === 市场背景 ===

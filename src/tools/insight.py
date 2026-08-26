@@ -184,9 +184,9 @@ def apply_adjustment(
                     "task_name": task.name,
                 })
 
-    # 创建调整记录；trigger_type 只允许 stage_audit/event/proactive 枚举
+    # 创建调整记录；trigger_type 只允许 stage_audit/event 枚举
     raw_trigger = insight_result.get("trigger_type", "")
-    trigger_type = raw_trigger if raw_trigger in (*VALID_TRIGGER_TYPES, "proactive") else ""
+    trigger_type = raw_trigger if raw_trigger in VALID_TRIGGER_TYPES else ""
 
     adjustment = Adjustment(
         trigger=insight_result.get("summary", ""),
