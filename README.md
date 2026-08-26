@@ -28,11 +28,11 @@
 **有真实数据，不瞎分析**
 接入 BOSS 直聘、牛客网，字节跳动，百度，阿里，腾讯等企业官网的真实数据。AI 分析你的差距时，用的是市场真实要求，不是凭空想象。
 
-**细化到每天，跟着做就行**
-不只是给你一个大方向。AI 把路线图拆成每天的任务，你只需要看今天做什么、打卡完成。不用想"下一步该干嘛"。
+**拆成阶段任务，跟着做就行**
+不只是给你一个大方向。AI 把路线图拆成分阶段任务，随时问「接下来做什么」、打卡完成，不用想"下一步该干嘛"。
 
 **跟着你调整，不是死计划**
-提前完成？加深度任务。超期了？压缩后续时长。拿到面试？自动加面试冲刺阶段。计划跟着你变，不是你跟着计划走。
+完成得轻松？建议加深难度。拿到面试？触发洞察重估计划。换了目标？已完成的进度自动沉淀为能力证据，努力不白费。
 
 ## 快速开始
 
@@ -42,31 +42,40 @@ cd career-kit
 pip install -e .
 ```
 
-然后在 Claude Code / Cursor / Windsurf 中配置：
+### 接入你的 AI Agent（一行命令）
 
-```json
-{
-  "mcpServers": {
-    "career-kit": {
-      "command": "career-kit"
-    }
-  }
-}
-```
+在 career-kit 目录下执行对应命令，注册为 MCP 服务器：
 
-和 AI 说"我想转行"，就开始了。
+| Agent | 注册方式 |
+|-------|---------|
+| Claude Code | `claude mcp add career-kit -- python -m src.server` |
+| Codex CLI | `codex mcp add career-kit -- python -m src.server` |
+| opencode | 在项目或全局 `opencode.json` 中加入：`{"mcp": {"career-kit": {"type": "local", "command": ["python", "-m", "src.server"], "enabled": true}}}` |
+| Cursor / Windsurf | MCP 设置中手动添加：command=`python`，args=`["-m", "src.server"]` |
+
+> macOS 用户把 `python` 换成 `python3`。项目发布 PyPI 后将支持 `uvx career-kit` 免克隆使用。
+
+### 斜杠命令（可选）
+
+- **Claude Code**：仓库已内置 `/career-kit [目标]`——在本目录启动 claude 即可直接使用；
+  想在任意目录用，复制到全局：`mkdir -p ~/.claude/commands && cp .claude/commands/career-kit.md ~/.claude/commands/`
+- **opencode**：同理内置 `.opencode/commands/career-kit.md`；全局版复制到 `~/.config/opencode/commands/`
+- **Codex CLI**：把 `.claude/commands/career-kit.md` 复制为 `~/.codex/prompts/career-kit.md`，
+  即可用 `/prompts:career-kit` 调用
+
+和 AI 说"我想转行"，或直接敲 `/career-kit 转行 AI Agent 工程师`。
 
 ## 它能做什么？
 
 ```
 你：我想转 AI Agent 方向
-Career Kit：分析差距 → 拉取真实岗位数据 → 设计路线图 → 细化到每天任务
+Career Kit：分析差距 → 拉取真实岗位数据 → 设计路线图 → 拆成阶段任务
 
-你：今天任务完成了
-Career Kit：打卡记录 → 提前完成？加深度任务 / 超期？压缩后续时长
+你：这步做完了
+Career Kit：打卡记录 → 完成即沉淀能力证据 → 阶段完成自动触发审计
 
 你：我拿到大厂面试了
-Career Kit：触发洞察 → 调整计划 → 加上面试冲刺阶段
+Career Kit：事件触发洞察 → 重估计划 → 调整阶段任务
 ```
 
 ## 核心流程

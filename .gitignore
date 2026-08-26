@@ -9,8 +9,10 @@ build/
 dev/
 data/cache/
 .career-kit/
-.claude/
-.opencode/
+.claude/*
+!.claude/commands/
+.opencode/*
+!.opencode/commands/
 .mcp.json
 screenshots/
 scripts/
