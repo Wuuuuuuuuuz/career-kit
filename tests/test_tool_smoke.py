@@ -152,6 +152,53 @@ def test_nowcoder_playwright_cleanup_in_finally():
     assert "p.stop()" in src
 
 
+def test_import_jd_rejects_empty_target(temp_profile):
+    """BUG-010 回归：缺岗位业务字段的 JD 拒绝导入，不污染 target_jd。"""
+    from src.server import import_jd
+
+    result = json.loads(import_jd(jd_text='{"raw_text": "随便写点什么"}'))
+    assert result.get("isError") is True
+    assert result["code"] == "INVALID_JSON"
+    assert not profile_module.load_profile().target_jd
+
+
+def test_import_jd_file_no_copyable_example(temp_profile):
+    """BUG-010 回归：import_jd_file 返回值不得包含可被直接复制的具体示例。"""
+    from src.server import import_jd_file
+
+    f = temp_profile / "jd.txt"
+    f.write_text("负责 AI Agent 应用开发，熟悉 LangChain。", encoding="utf-8")
+
+    text = import_jd_file(file_path=str(f))
+    assert "禁止原样复制" in text
+    assert '"role": "AI Agent 工程师"' not in text  # 具体示例值不应出现在返回值里
+
+
+def test_workflow_status_goal_change_grading(temp_profile):
+    """BUG-010 回归：want 变更强告警；target_jd 污染降级为可核查提示。"""
+    from src.models import Task
+    from src.server import get_workflow_status
+
+    # target_jd 被示例污染（晚于路线图），但 want 未变 → 信息级提示而非重分析告警
+    p = profile_module.load_profile()
+    p.plan = {"roadmap": {"phases": [{"id": "phase_1", "name": "基础"}]}}
+    p.plan_saved_at = "2026-08-26T10:00:00"
+    p.section_updated_at = {"target_jd": "2026-08-26T11:00:00"}
+    p.target_jd = {"company": "字节跳动", "role": "AI Agent 工程师", "requirements": ["LangGraph"]}
+    p.tasks = [Task(id="task_001", name="任务", phase_id="phase_1")]
+    profile_module.save_profile(p)
+
+    st = get_workflow_status()
+    assert "target_jd" in st and "误导入" in st
+    assert "检测到用户目标（want）" not in st  # 不是重分析强告警
+
+    # want 真实变更 → 强告警
+    p.section_updated_at = {"want": "2026-08-26T12:00:00"}
+    profile_module.save_profile(p)
+    st2 = get_workflow_status()
+    assert "检测到用户目标（want）" in st2 and "重新调用 analyze_gaps" in st2
+
+
 def test_apply_insight_end_to_end(temp_profile):
     """BUG-005 回归：apply_insight 可导入、可执行、调整可落地。"""
     from src.models import Task

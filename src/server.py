@@ -245,6 +245,22 @@ def import_jd(jd_text: str) -> str:
     except json.JSONDecodeError:
         jd_data = {"raw": jd_text}
 
+    # 最小校验（BUG-010）：拒绝空/无岗位业务字段的 JD，防止示例或垃圾内容
+    # 污染 target_jd 并让 get_workflow_status 持续误报目标变更
+    if isinstance(jd_data, dict) and "raw" not in jd_data:
+        biz_fields = (
+            "company", "role", "position", "title", "job",
+            "requirements", "description", "job_description",
+            "responsibilities", "responsibility",
+        )
+        if not any(jd_data.get(k) for k in biz_fields):
+            return error_response(
+                "INVALID_JSON",
+                "target_jd 缺少岗位关键字段（company/role/requirements/description 等），拒绝导入。"
+                "请基于真实 JD 内容填充字段后再调用 import_jd。",
+                {"received": jd_text[:200]},
+            )
+
     profile.target_jd = jd_data
     profile.section_updated_at["target_jd"] = datetime.now().isoformat()
     profile.touch()
@@ -272,8 +288,10 @@ def import_jd_file(file_path: str) -> str:
 
     return (
         f"--- JD CONTENT ---\n{text}\n--- END ---\n\n"
-        "根据以上 JD 内容，请调用 import_jd 工具导入：\n"
-        '示例：import_jd(jd_text=\'{"company":"字节跳动","role":"AI Agent 工程师","requirements":[...]}\'）'
+        "根据以上 JD 内容，请调用 import_jd 工具导入，字段结构如下：\n"
+        'import_jd(jd_text=\'{"company": "<公司名>", "role": "<岗位名>", "requirements": ["<要求1>", "<要求2>"]}\')\n'
+        "⚠️ 请用上面 JD 的真实内容填充字段（company/role/requirements/description 至少一项），"
+        "禁止原样复制示例占位文本。"
     )
 
 
@@ -1137,18 +1155,26 @@ def get_workflow_status() -> str:
     """
     profile = load_profile()
 
-    # 目标变更检测：want / target_jd 在路线图保存之后被更新过 → 建议重新分析
+    # 目标变更检测（BUG-010）：want 是用户真实目标，变更要强告警；
+    # target_jd 可能被示例/误导入污染，降级为「可核查提示」并附摘要，不再逼用户重分析
     goal_change_alert = ""
     plan_saved_at = profile.plan_saved_at
     if profile.plan.get("roadmap") and plan_saved_at:
-        for key in ("want", "target_jd"):
-            updated_at = profile.section_updated_at.get(key, "")
-            if updated_at and updated_at > plan_saved_at:
+        want_at = profile.section_updated_at.get("want", "")
+        if want_at and want_at > plan_saved_at:
+            goal_change_alert = (
+                "⚠️ 检测到用户目标（want）在路线图生成之后发生了变更。\n"
+                "旧路线图可能已不适用，建议重新调用 analyze_gaps 进行分析。\n\n"
+            )
+        else:
+            jd_at = profile.section_updated_at.get("target_jd", "")
+            if jd_at and jd_at > plan_saved_at and profile.target_jd:
+                jd_summary = _summarize_dict(profile.target_jd)
                 goal_change_alert = (
-                    f"⚠️ 检测到目标（{key}）在路线图生成之后发生了变更。\n"
-                    "旧路线图可能已不适用，建议重新调用 analyze_gaps 进行分析。\n\n"
+                    f"ℹ️ 检测到 target_jd 在路线图之后更新（{jd_summary}）。\n"
+                    "若这是真实的新目标 JD，建议重新 analyze_gaps；\n"
+                    "若为误导入（如示例文本），可忽略本提示，或请 LLM 用 import_jd 覆盖为真实 JD。\n\n"
                 )
-                break
 
     # 确定当前阶段
     phase = "not_started"
