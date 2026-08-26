@@ -33,9 +33,10 @@ fetch_company_jobs(company="boss", params='{"keyword":"AI Agent", "city":"上海
 
 ## 注意事项
 
-1. **需要登录态**：首次使用前在本项目目录运行 `python -m src.scrapers.boss.login`：
-   工具会拉起一个独立 Chrome 窗口（零附着设计，规避 BOSS 前端对调试协议的检测），
-   在其中完成扫码登录后回到终端按回车，cookies 自动落盘、长期复用；过期时重跑一次即可
+1. **需要登录态**：首次使用前在本项目目录运行 `python -m src.scrapers.boss.login`，
+   一条命令到底：patchright（Playwright 反检测 fork，驱动层消除 CDP 检测向量）
+   拉起真实 Chrome → 你在浏览器完成扫码 → 工具自动检测登录态落盘并退出，
+   全程无需任何手动确认；cookies 长期复用，过期时重跑一次即可
 2. 失败时错误信息会说明原因（未登录 / 风控 code=36 需等待 / code=37 自动处理 stoken）
 3. 抓取频率受风控限制，短时间多次调用可能被临时限制
 4. `salary` 过滤为**近似过滤**：BOSS API 对日薪岗（如「250-400元/天」）不生效，

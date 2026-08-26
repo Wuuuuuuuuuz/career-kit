@@ -17,8 +17,10 @@ dependencies = [
     "pyyaml>=6.0",
     "httpx>=0.25.0",
     "playwright>=1.40.0",
-    "websockets>=12.0",
     "iv8",
+    # 反检测 fork，驱动层消除 Runtime.enable 泄漏（BOSS 登录必需）。
+    # 必须锁死版本：上游重构可能导致静默失效
+    "patchright==1.62.1",
 ]
 
 [project.scripts]
