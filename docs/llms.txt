@@ -77,7 +77,7 @@ Career Kit 的核心优势是有**真实数据**，而不是凭空分析：
 | `apply_insight` | 应用洞察结果 | LLM 分析完成后 |
 | `get_progress` | 查看进度 | 用户想了解进度时 |
 | `get_workflow_status` | 工作流状态 + 目标变更检测 | 不确定下一步时 |
-| `export_dashboard` | 生成自包含 HTML 阶段仪表盘 | 用户想直观查看进度时 |
+| `export_dashboard` | 生成自包含 HTML（mode=progress 仪表盘 / mode=roadmap 职业地图） | 用户想直观查看进度或路线图时 |
 | `import_plan` | 导入既有规划文档 | 用户有旧计划要迁移时 |
 
 ## 完整工作流示例

@@ -274,6 +274,94 @@ def test_get_next_tasks_shows_full_overview(temp_profile):
     assert "⬅ 当前" in out  # 当前阶段有定位标记
 
 
+def test_roadmap_jd_fields_defaults():
+    """jd 三件套默认字段：intern 未标注视为待导入占位，其余免 JD。"""
+    from src.tools.roadmap import parse_roadmap
+
+    roadmap = parse_roadmap(json.dumps({
+        "roadmap": {"phases": [
+            {"type": "intern", "name": "某司实习"},
+            {"type": "learn", "name": "基础"},
+        ]}
+    }, ensure_ascii=False))["roadmap"]
+
+    intern_ph, learn_ph = roadmap["phases"]
+    assert intern_ph["jd_status"] == "pending_user_import"
+    assert intern_ph["confirmed"] is False
+    assert intern_ph["company"] == "" and intern_ph["jd"] is None
+    assert learn_ph["jd_status"] == "not_required"
+
+
+def test_save_roadmap_soft_check_and_html(temp_profile):
+    """软校验：占位未确认/jd 无据提示；确认后消除；定稿自动产出路线图 HTML。"""
+    from src.server import save_roadmap
+
+    base = {
+        "roadmap": {"strategy_summary": "测试", "phases": [
+            {"type": "intern", "name": "某公司实习", "company": "某公司"},
+            {"type": "project", "name": "做RAG项目", "jd": {"requirements": ["LangGraph"]}},
+            {"type": "intern", "name": "已确认实习", "company": "乙公司", "jd_status": "pending_user_import", "confirmed": True},
+        ]}
+    }
+
+    # 未确认占位 + jd 有内容无依据 → 均应提示；已确认的占位不提示
+    result = json.loads(save_roadmap(json.dumps(base, ensure_ascii=False)))
+    assert result["context"]["phase"] == "roadmap_saved"
+    msg = result["message"]
+    assert "某公司实习" in msg and "占位" in msg          # 未确认占位被提示
+    assert "做RAG项目" in msg and "has_jd" in msg         # jd 有内容但未标注依据被提示
+    assert "已确认实习" not in msg or "已确认" in msg      # confirmed 的占位不再提示（其名不含警告词）
+
+    # 全部满足约束 → 无警告
+    clean = {
+        "roadmap": {"strategy_summary": "测试", "phases": [
+            {"type": "intern", "name": "某公司实习", "company": "某公司",
+             "jd_status": "pending_user_import", "confirmed": True},
+            {"type": "project", "name": "做RAG项目", "jd": {"requirements": ["LangGraph"]},
+             "jd_status": "has_jd"},
+        ]}
+    }
+    result2 = json.loads(save_roadmap(json.dumps(clean, ensure_ascii=False)))
+    assert "依据待确认" not in result2["message"]
+
+    # 定稿自动产出路线图 HTML
+    assert "career_kit_roadmap.html" in result2["message"]
+
+
+def test_export_dashboard_roadmap_map(temp_profile):
+    """活地图：mode=roadmap 含公司/占位徽标/执行进度/当前阶段高亮。"""
+    from src.models import Task
+    from src.server import export_dashboard
+
+    p = profile_module.load_profile()
+    p.plan = {"roadmap": {"strategy_summary": "先实习后冲刺", "phases": [
+        {"id": "phase_1", "type": "intern", "name": "某公司实习", "company": "某公司",
+         "rationale": "对双非友好", "jd_status": "pending_user_import"},
+        {"id": "phase_2", "type": "learn", "name": "基础冲刺", "milestones": [
+            {"name": "M1", "tasks": [{"name": "刷题"}, {"name": "项目"}]}
+        ]},
+    ]}}
+    p.tasks = [
+        Task(id="task_001", name="刷题", phase_id="phase_2"),
+        Task(id="task_002", name="项目", phase_id="phase_2", status="completed"),
+    ]
+    p.gap = {"start_level": "中厂"}
+    profile_module.save_profile(p)
+
+    out = export_dashboard(mode="roadmap")
+    assert "career_kit_roadmap.html" in out
+
+    path = Path(out.split("：")[1].splitlines()[0].strip())
+    html = path.read_text(encoding="utf-8")
+    assert "职业地图" in html
+    assert "某公司" in html and "对双非友好" in html      # 公司名 + 推荐理由
+    assert "待导入真实 JD" in html                        # 占位徽标
+    assert "起点层级" in html and "中厂" in html           # start_level 展示
+    assert "1/2" in html and "%" in html                   # 执行进度
+    assert "⬅ 当前" in html                                # 当前阶段高亮
+    assert "免 JD" in html                                 # learn 阶段徽标
+
+
 def test_apply_insight_end_to_end(temp_profile):
     """BUG-005 回归：apply_insight 可导入、可执行、调整可落地。"""
     from src.models import Task

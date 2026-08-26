@@ -62,6 +62,16 @@ def parse_roadmap(llm_response: str) -> dict[str, Any]:
         phase.setdefault("resume_value", "")
         phase.setdefault("milestones", [])
 
+        # jd 三件套（知识光谱）：
+        # company/rationale 是公开常识可自由写；jd 是时效事实，有真实数据才填。
+        # jd_status 默认按类型推断：intern 无标注视为待导入占位，其余无需 JD。
+        phase.setdefault("company", "")
+        phase.setdefault("rationale", "")
+        phase.setdefault("jd", None)
+        phase.setdefault("confirmed", False)
+        if "jd_status" not in phase:
+            phase["jd_status"] = "pending_user_import" if phase["type"] == "intern" else "not_required"
+
         for ms_idx, ms in enumerate(phase["milestones"]):
             ms["id"] = f"phase_{idx + 1}_ms_{ms_idx + 1}"
             ms.setdefault("name", "")
@@ -102,6 +112,30 @@ def format_roadmap(roadmap_data: dict[str, Any]) -> str:
 
         lines.append(f"### {type_icon} {phase.get('name', '')} [{phase_type}]（{phase.get('id', '')}）")
         lines.append(f"**目标**：{phase.get('goal', '')}")
+        lines.append("")
+
+        # jd 三件套展示：公司名（常识）+ 依据状态（has_jd/占位/免JD）
+        company = phase.get("company", "")
+        if company:
+            rationale = phase.get("rationale", "")
+            line = f"**目标公司**：{company}"
+            if rationale:
+                line += f"（{rationale}）"
+            lines.append(line)
+
+        jd_status = phase.get("jd_status", "not_required")
+        confirmed = phase.get("confirmed", False)
+        if jd_status == "has_jd":
+            jd = phase.get("jd")
+            if jd:
+                if isinstance(jd, dict):
+                    jd_parts = [f"{k}：{v}" for k, v in jd.items() if v]
+                    lines.append(f"📄 **JD 依据**：{'；'.join(jd_parts)[:300]}")
+                else:
+                    lines.append(f"📄 **JD 依据**：{str(jd)[:300]}")
+        elif jd_status == "pending_user_import":
+            mark = "（已确认占位）" if confirmed else "（待用户确认）"
+            lines.append(f"⏳ **待导入真实 JD 后细化**{mark}——当前只有公司名，无岗位要求细节")
         lines.append("")
 
         kpi = phase.get("kpi", {})

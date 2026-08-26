@@ -1,5 +1,5 @@
 name: 路线图生成
-version: "3.0"
+version: "4.0"
 description: 从差距分析出发，生成可执行的分阶段职业路线图。产品不规划时间——只定义顺序、产出与完成标准，节奏由用户掌握
 
 methodology:
@@ -9,38 +9,57 @@ methodology:
     - "不为任务标注天数或时长——用户的时间分配完全由用户自己决定，快慢都是正常的"
     - "里程碑必须有明确的完成标准（done_criteria），完成与否看标准不看日历"
     - "善于建议高价值活动：开源 PR、黑客马拉松、技术博客——这些都能归入 project 类型"
-    - "市场数据驱动设计——用真实 JD 中的技能要求来决定学什么、做什么"
+    - "知识光谱纪律：公司名与选人特点是公开常识，可直接写（如'某司卡学历'、'某司欢迎双非'）；
+       但具体 JD 细节（岗位职责/技能要求/薪资）必须有真实数据支撑——企业库有的抓取，
+       没有的引导用户导入，两者都没有就只写阶段目标与完成标准，绝不编造要求细节"
+    - "起点决定路径：intern/过渡阶段必须从 gap.start_level（用户当前可进入的企业层级）出发，
+       目标超起点时插入过渡阶段，而不是直接规划进不去的企业"
 
   phases:
     - id: gather_market_data
       name: 检索市场数据
       guidance: |
-        搜索目标岗位的真实 JD 和市场信息，为路线图设计提供数据支撑。
-        关注：目标岗位需要哪些技能、市场上的热门技术栈、岗位要求的项目经验类型。
-        这些数据决定了路线图中学什么、做什么、优先级如何排列。
+        按阶段类型决定取数范围，不为每个阶段都抓 JD：
+        - learn / 自建 project / research：无需岗位数据（学什么由差距分析决定）
+        - intern / 需要真实岗位依据的阶段：企业库有的用 fetch_company_jobs 抓同类岗位；
+          企业库没有的请用户导入（import_jd_file）；两者都拿不到时，该阶段 jd 保持空、
+          jd_status 置 pending_user_import，绝不凭记忆写岗位要求细节
+        同时读取 gap.start_level，确定用户当前可进入的企业层级档位。
       data_needs:
         - type: job_requirements
           query_hint: "{target_role} {target_company} 岗位要求 技能"
           local_paths: ["jds/", "market/"]
-      quality_gate: "获取到足够数量的 JD 数据，能归纳出核心技能要求"
+        - type: start_level
+          query_hint: "从 profile.gap.start_level 中获取"
+          local_paths: []
+      quality_gate: "intern 阶段要么有真实 JD 数据（has_jd），要么明确标记为待导入（pending_user_import），
+      不存在既无数据又写了要求细节的阶段"
 
     - id: design_roadmap
       name: 设计路线图
       guidance: |
-        LLM 动态设计阶段划分、KPI、里程碑与任务。分两步：
+        LLM 动态设计阶段划分、KPI、里程碑与任务。分三步：
 
-        第一步——差距提取：
-        - 需要弥补的技能（按优先级排序，标注当前水平和目标水平）
-        - 需要创造的经历（项目/实习/研究等）
-        - 用户已有的能力证据（have.capability_evidence，来自历史打卡沉淀）
-        - 起点评估（当前水平总结）
+        第一步——起点对齐：
+        - 读取 gap.start_level（差距分析已产出），与用户经历、能力证据交叉核对，
+          确定「当前可进入的企业层级」（大厂/中厂/小厂）
+        - 梳理需要弥补的技能、需要创造的经历（项目/实习/研究等）
 
-        第二步——路线图设计：
-        阶段类型说明：
+        第二步——路线图设计（阶段类型与 jd 三件套）：
         - learn（学习技能）：刷题、学框架、考认证、看文档、跟教程。resume_value 通常为空。
+          jd_status = not_required。
         - project（做项目）：独立项目、开源贡献、黑客马拉松、技术博客。必须有 resume_value。
+          自建项目 jd_status = not_required。
         - intern（实习）：公司实习、远程实习、兼职。必须有 resume_value。
+          company 可直接写具体公司名，并附 rationale（推荐理由，如「对双非友好」）；
+          有真实 JD 数据时 jd 填要求细节、jd_status = has_jd；
+          没有真实 JD 时 jd 保持空、jd_status = pending_user_import。
         - research（研究）：发论文、做课题、参与实验室项目。必须有 resume_value。
+
+        第三步——过渡阶段与占位：
+        - 目标企业层级高于 start_level 时，插入过渡阶段（如先进一家可进入的中小厂攒经历）
+        - 过渡阶段可以写具体公司名 + rationale，但 jd 细节必须等真实 JD
+        - 占位阶段在用户确认后 confirmed 置 true（用户已接受「先占位后补JD」）
 
         设计原则：
         1. 阶段顺序由 LLM 根据实际情况决定，没有固定模式
@@ -51,7 +70,7 @@ methodology:
         6. 任务粒度到「一次坐下来可完成」的粒度，但不估算天数
       data_needs:
         - type: gap_summary
-          query_hint: "从 profile.gap 中获取"
+          query_hint: "从 profile.gap 中获取（含 start_level）"
           local_paths: []
         - type: user_have
           query_hint: "从 profile 中获取"
@@ -59,7 +78,8 @@ methodology:
         - type: user_want
           query_hint: "从 profile 中获取"
           local_paths: []
-      quality_gate: "每个阶段有 KPI 和 resume_value（learn 类型除外），每个里程碑有完成标准，全程无时长字段"
+      quality_gate: "每个阶段有 KPI 和 resume_value（learn 类型除外），每个里程碑有完成标准，
+      全程无时长字段；intern 阶段符合 jd 三件套约束（有据填 jd，无据占位）"
       depends_on: [gather_market_data]
 
   output_schema:
@@ -69,6 +89,11 @@ methodology:
       - type, name, goal（id 由系统自动生成，无需提供）
       - kpi: { metric, target, evidence }
       - resume_value: 如何写到简历上
+      - company: 实习/目标公司名（公开常识，可直接写）
+      - rationale: 为什么推荐这家/这个方向（展示给用户的理由）
+      - jd: 具体岗位要求细节——只有拿到真实 JD 数据（抓取/导入）才填
+      - jd_status: has_jd | pending_user_import | not_required
+      - confirmed: 用户已确认占位（占位阶段在用户确认后置 true）
       - milestones: { name, tasks[], deliverable, done_criteria }
       每个 task 包含：name, description, priority
       注意：不要输出任何 duration/total_duration/estimated_days 类字段

@@ -220,6 +220,27 @@ export_dashboard() → 自包含 HTML 仪表盘（内嵌数据快照）
 
 调整类型仅支持 add_task / remove_task / modify_task——不存在压缩时长类调整。
 
+### 6.4 路线图阶段（jd 三件套）
+
+```json
+{
+  "type": "intern",
+  "name": "某公司 Agent 实习",
+  "company": "某公司",
+  "rationale": "对双非友好，Agent 布局重",
+  "jd": null,
+  "jd_status": "pending_user_import",
+  "confirmed": false,
+  "milestones": []
+}
+```
+
+知识光谱纪律：company/rationale 是公开常识可自由写；jd 是时效事实，有真实数据（抓取/导入）才填，
+否则保持空并标记 pending_user_import（用户确认后 confirmed=true）。`gap.start_level`
+（差距分析产出）是 intern/过渡阶段的起点约束，目标超起点时插入过渡阶段。
+`export_dashboard(mode="roadmap")` 输出职业地图（路线图+执行进度+占位/依据徽标），
+save_roadmap 定稿时自动生成一份。
+
 ---
 
 ## 7. 洞察触发机制

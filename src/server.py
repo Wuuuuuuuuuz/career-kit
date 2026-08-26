@@ -525,6 +525,11 @@ def save_roadmap(roadmap_json: str) -> str:
                     "goal": "掌握基础",           // 阶段目标
                     "kpi": {"metric": "...", "target": "...", "evidence": "..."},
                     "resume_value": "",           // project/intern/research 必填
+                    "company": "XX公司",           // 目标公司名（公开常识，可直接写）
+                    "rationale": "对双非友好",     // 推荐理由
+                    "jd": null,                    // 具体 JD 细节——有真实数据（抓取/导入）才填
+                    "jd_status": "not_required",   // has_jd / pending_user_import / not_required
+                    "confirmed": false,            // 用户已确认「先占位后补JD」
                     "milestones": [               // 里程碑列表
                         {
                             "name": "Python 基础",        // 里程碑名称
@@ -543,7 +548,12 @@ def save_roadmap(roadmap_json: str) -> str:
             ]
         }
 
-    注意：不要输出任何时长类字段（duration/estimated_days 等），产品不规划时间。
+    注意：
+    - 不要输出任何时长类字段（duration/estimated_days 等），产品不规划时间。
+    - 知识光谱纪律：公司名是常识可自由写；JD 细节必须有真实数据，拿不到就 jd 置空 +
+      jd_status=pending_user_import，用户确认后 confirmed 置 true。
+    - 软校验：jd 有内容但无依据 / 占位未确认的阶段会在返回值中给出「依据待确认」清单，
+      不会拒绝保存——请向用户确认后再定稿。
     """
     try:
         roadmap_data = _parse_json_param(roadmap_json, "路线图")
@@ -571,13 +581,55 @@ def save_roadmap(roadmap_json: str) -> str:
     # 格式化报告
     report = format_roadmap(parsed)
 
+    # 软校验：jd 三件套约束（不拒绝保存，仅提示确认）
+    warnings_list = []
+    for phase in parsed.get("roadmap", parsed).get("phases", []):
+        phase_type = phase.get("type", "learn")
+        if phase_type == "learn":
+            continue
+        jd_status = phase.get("jd_status", "not_required")
+        jd = phase.get("jd")
+        name = phase.get("name", phase.get("id", "?"))
+
+        if jd and jd_status != "has_jd":
+            warnings_list.append(
+                f"阶段「{name}」填了 JD 细节但 jd_status={jd_status}——请确认这些要求来自真实数据"
+                "（抓取/导入），属实则改为 has_jd"
+            )
+        elif not jd and jd_status == "has_jd":
+            warnings_list.append(
+                f"阶段「{name}」标注 has_jd 但 jd 为空——请补上真实 JD 细节或改为占位"
+            )
+        elif jd_status == "pending_user_import" and not phase.get("confirmed"):
+            warnings_list.append(
+                f"阶段「{name}」是占位（待导入真实 JD），尚未得到用户确认——"
+                "请向用户确认「先占位后补 JD」；确认后把 confirmed 置 true 再保存可消除本提示"
+            )
+
+    # 定稿即交付：自动生成路线图活地图 HTML（随时可重新生成）
+    map_path = ""
+    try:
+        map_html = _render_roadmap_map(profile)
+        map_path = _write_html(map_html, "career_kit_roadmap.html")
+    except Exception:
+        map_path = ""
+
+    warnings_text = ""
+    if warnings_list:
+        warnings_text = "\n\n⚠️ 依据待确认：\n" + "\n".join(f"- {w}" for w in warnings_list)
+
     return _json({
         "message": (
-            f"路线图已保存。\n\n{report}\n\n"
+            f"路线图已保存。\n\n{report}{warnings_text}\n\n"
+            f"路线图 HTML 已生成：{map_path}（双击即看，可随时用 export_dashboard(mode=\"roadmap\") 重新生成）\n\n"
             "接下来可以调用 generate_tasks 生成任务列表开始执行。"
         ),
         "next_steps": ["generate_tasks"],
-        "context": {"phase": "roadmap_saved", "version": profile.version},
+        "context": {
+            "phase": "roadmap_saved",
+            "version": profile.version,
+            "jd_warnings": warnings_list,
+        },
     })
 
 
@@ -1324,15 +1376,60 @@ def get_workflow_status() -> str:
 
 
 @mcp.tool()
-def export_dashboard() -> str:
-    """生成阶段进度仪表盘（自包含 HTML 文件）。
+def export_dashboard(mode: str = "progress") -> str:
+    """生成自包含 HTML（双击即可在浏览器查看，无需服务器）。
 
-    何时调用：用户想直观查看整体进度时调用。
-    一次性产出：HTML 内嵌当前档案数据快照，双击即可在浏览器查看，无需服务器。
+    Args:
+        mode: 视图模式
+            - "progress"（默认）：阶段进度仪表盘——总体/阶段进度、当前任务、能力证据、调整历史
+            - "roadmap"：职业地图——完整路线图（阶段/KPI/里程碑/任务/完成标准/简历价值/
+              目标公司/推荐理由/JD 依据与占位徽标）+ 每阶段执行进度 + 当前阶段高亮；
+              执行中随时重新生成，永远是「最新地图」
+
+    何时调用：
+    - 用户想直观查看整体进度时调用（progress）
+    - 用户想要可携带的路线图全貌时调用（roadmap）；save_roadmap 定稿时也会自动生成一份
     """
+    profile = load_profile()
+
+    if mode == "roadmap":
+        html = _render_roadmap_map(profile)
+        out_path = _write_html(html, "career_kit_roadmap.html")
+        return (
+            f"职业地图已生成：{out_path}\n\n"
+            "用浏览器打开即可查看。包含完整路线图、每阶段执行进度、JD 依据与占位状态。\n"
+            "进度更新后重新调用本工具即可刷新（永远是最新的地图）。"
+        )
+
+    if mode != "progress":
+        return error_response(
+            "INVALID_SECTION",
+            f"mode 必须是 progress/roadmap，收到的是「{mode}」",
+            {"received": mode, "valid": ["progress", "roadmap"]},
+        )
+
+    html = _render_progress_html(profile)
+    out_path = _write_html(html, "career_kit_dashboard.html")
+
+    return (
+        f"仪表盘已生成：{out_path}\n\n"
+        "用浏览器打开即可查看。数据为生成时刻的快照，进度更新后可重新导出。\n"
+        "如需日程表，请直接在对话中为用户编写 markdown/HTML 日程文档（时间由用户自己填）。"
+    )
+
+
+def _write_html(html: str, filename: str) -> str:
+    """把 HTML 写入临时目录并返回路径。"""
     import tempfile
 
-    profile = load_profile()
+    out_path = Path(tempfile.gettempdir()) / filename
+    out_path.write_text(html, encoding="utf-8")
+    return str(out_path)
+
+
+def _render_progress_html(profile) -> str:
+    """渲染进度仪表盘 HTML（mode="progress"）。"""
+    import tempfile
 
     finished_status = ("completed", "skipped")
     total_tasks = len(profile.tasks)
@@ -1425,14 +1522,145 @@ ul {{ padding-left: 20px; }} li {{ margin: 4px 0; font-size: 14px; }}
 <p class="meta">顺序归产品，时间归用户 —— Career Kit 不为任务设定时限。</p>
 </body></html>"""
 
-    out_path = Path(tempfile.gettempdir()) / "career_kit_dashboard.html"
-    out_path.write_text(html, encoding="utf-8")
+    return html
 
-    return (
-        f"仪表盘已生成：{out_path}\n\n"
-        "用浏览器打开即可查看。数据为生成时刻的快照，进度更新后可重新导出。\n"
-        "如需日程表，请直接在对话中为用户编写 markdown/HTML 日程文档（时间由用户自己填）。"
+
+def _render_roadmap_map(profile) -> str:
+    """渲染「职业地图」HTML（mode="roadmap"）：完整路线图 + 每阶段执行进度 + 依据/占位徽标。
+
+    执行中随时重新生成——永远是「我在哪、计划是什么、什么待补」的最新地图。
+    """
+    finished_status = ("completed", "skipped")
+
+    roadmap = profile.plan.get("roadmap", profile.plan)
+    phases = roadmap.get("phases", []) if isinstance(roadmap, dict) else []
+    strategy = roadmap.get("strategy_summary", "")
+
+    type_icons = {"learn": "📚", "project": "🛠️", "intern": "💼", "research": "🔬"}
+
+    phase_cards = ""
+    for idx, phase in enumerate(phases):
+        phase_id = phase.get("id") or f"phase_{idx + 1}"
+        phase_tasks = [t for t in profile.tasks if t.phase_id == phase_id]
+        done = sum(1 for t in phase_tasks if t.status in finished_status)
+        total = len(phase_tasks)
+        pct = int(done / total * 100) if total else 0
+        is_current = bool(profile.tasks) and phase_id == profile.tasks[0].phase_id
+
+        icon = type_icons.get(phase.get("type", ""), "📋")
+        current_mark = " ⬅ 当前" if is_current else ""
+
+        # 依据/占位徽标
+        jd_status = phase.get("jd_status", "not_required")
+        confirmed = phase.get("confirmed", False)
+        if jd_status == "has_jd":
+            badge = '<span class="badge ok">📄 有 JD 依据</span>'
+        elif jd_status == "pending_user_import":
+            badge = '<span class="badge warn">⏳ 待导入真实 JD' + ("（已确认）" if confirmed else "（待确认）") + '</span>'
+        else:
+            badge = '<span class="badge">免 JD</span>'
+
+        company_line = ""
+        if phase.get("company"):
+            rationale = phase.get("rationale", "")
+            company_line = f'<p class="company">🏢 {phase.get("company")}' + (
+                f' <span class="meta">— {rationale}</span>' if rationale else ""
+            ) + "</p>"
+
+        jd_line = ""
+        if jd_status == "has_jd" and phase.get("jd"):
+            jd = phase["jd"]
+            if isinstance(jd, dict):
+                jd_text = "；".join(f"{k}：{v}" for k, v in jd.items() if v)
+            else:
+                jd_text = str(jd)
+            jd_line = f'<p class="jd">📄 {jd_text[:400]}</p>'
+
+        kpi = phase.get("kpi", {}) or {}
+        kpi_line = ""
+        if isinstance(kpi, dict) and kpi.get("metric"):
+            kpi_line = f'<p class="goal">KPI：{kpi.get("metric")} → {kpi.get("target", "?")}' + (
+                f'（验证：{kpi.get("evidence")}）' if kpi.get("evidence") else ""
+            ) + "</p>"
+
+        resume_line = ""
+        if phase.get("resume_value"):
+            resume_line = f'<p class="resume">📝 简历价值：{phase.get("resume_value")}</p>'
+
+        ms_html = ""
+        for ms in phase.get("milestones", []):
+            ms_html += f'<div class="ms"><b>{ms.get("name", "")}</b>'
+            if ms.get("done_criteria"):
+                ms_html += f' <span class="meta">完成标准：{ms.get("done_criteria")}</span>'
+            if ms.get("deliverable"):
+                ms_html += f' <span class="meta">交付物：{ms.get("deliverable")}</span>'
+            tasks = "".join(
+                f"<li>{t.get('name', '')}"
+                + (f" <span class='meta'>—{t.get('description')}</span>" if t.get("description") else "")
+                + "</li>"
+                for t in ms.get("tasks", [])
+            )
+            if tasks:
+                ms_html += f"<ul>{tasks}</ul>"
+            ms_html += "</div>"
+
+        phase_cards += f"""
+<div class="card phase{'' if not is_current else ' current'}">
+  <div class="phase-head">
+    <span>{icon} {phase.get('name', phase_id)} [{phase.get('type', '')}]{current_mark} {badge}</span>
+    <span>{done}/{total} · {pct}%</span>
+  </div>
+  <div class="bar"><div class="fill" style="width:{pct}%"></div></div>
+  {company_line}
+  <p class="goal">{phase.get('goal', '')}</p>
+  {kpi_line}
+  {resume_line}
+  {jd_line}
+  {ms_html}
+</div>"""
+
+    start_level = (profile.gap or {}).get("start_level", "")
+    start_line = (
+        f'<p class="goal">起点层级：<b>{start_level}</b>（差距分析产出，路线图按此对齐）</p>'
+        if start_level else ""
     )
+
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Career Kit 职业地图</title>
+<style>
+body {{ font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+       max-width: 860px; margin: 0 auto; padding: 24px; color: #222; background: #fafafa; }}
+h1 {{ font-size: 22px; }} h2 {{ font-size: 17px; border-bottom: 2px solid #4a90d9; padding-bottom: 4px; }}
+.card {{ background: #fff; border: 1px solid #e3e3e3; border-radius: 10px; padding: 16px; margin-bottom: 14px; }}
+.card.current {{ border-left: 4px solid #4a90d9; background: #f5f9ff; }}
+.bar {{ background: #eee; border-radius: 6px; height: 10px; overflow: hidden; margin: 6px 0; }}
+.fill {{ background: linear-gradient(90deg,#4a90d9,#67b26f); height: 100%; }}
+.phase-head {{ display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 2px; }}
+.company {{ margin: 6px 0 2px; font-size: 13px; }}
+.goal, .resume, .jd {{ color: #555; font-size: 13px; margin: 3px 0; }}
+.resume {{ color: #2e7d32; }} .jd {{ color: #455a64; background: #f4f7f8; padding: 4px 8px; border-radius: 4px; }}
+.badge {{ display: inline-block; font-size: 11px; color: #666; background: #eee;
+          border-radius: 8px; padding: 1px 7px; margin-left: 4px; }}
+.badge.ok {{ color: #2e7d32; background: #e6f4ea; }}
+.badge.warn {{ color: #b26a00; background: #fff4e0; }}
+.ms {{ margin: 8px 0 0; font-size: 13px; }}
+ul {{ padding-left: 20px; margin: 4px 0; }} li {{ margin: 2px 0; font-size: 13px; }}
+small, .meta {{ color: #999; font-size: 12px; }}
+</style>
+</head>
+<body>
+<h1>Career Kit 职业地图 <span class="meta">生成于 {datetime.now().strftime("%Y-%m-%d %H:%M")} · 路线图 v{profile.version}</span></h1>
+
+{start_line}
+<p class="meta">{strategy}</p>
+
+{phase_cards or '<p>尚未生成路线图。</p>'}
+
+<p class="meta">顺序归产品，时间归用户。⏳ 待导入 JD 的阶段在拿到真实 JD 后会自动触发细化。</p>
+</body></html>"""
 
 
 def main():

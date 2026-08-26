@@ -51,7 +51,7 @@
 | `apply_insight` | 应用洞察结果（add/remove/modify 任务） | LLM 分析完成后 |
 | `get_progress` | 查看整体进度 | 用户想了解进度时 |
 | `get_workflow_status` | 工作流状态 + 目标变更检测 | 不确定下一步时 |
-| `export_dashboard` | 生成自包含 HTML 阶段仪表盘 | 用户想直观查看进度时 |
+| `export_dashboard` | 生成自包含 HTML：`mode="progress"` 进度仪表盘（默认）/ `mode="roadmap"` 职业地图（完整路线图+执行进度+JD 依据/占位徽标） | 用户想直观查看进度或可携带路线图时 |
 | `import_plan` | 导入既有规划文档（对比取舍在对话中完成） | 用户有旧计划要迁移时 |
 
 ## 工作流
