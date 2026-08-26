@@ -167,8 +167,9 @@ def intake(section: str, data: str) -> str:
             - who: 你是谁（姓名、教育、状态）
             - have: 你有什么（技能、经历、资源）；关键技能请附带证据与置信度
             - want: 你想要什么（目标岗位、行业、薪资）
-        data: 用户提供的信息，期望是 JSON 字符串
+        data: 用户提供的信息，必须是 JSON 对象字符串
             示例：'{"name":"张三", "education":"计算机本科", "skills":["Python", "React"]}'
+            非法 JSON 会被拒绝且不写入档案
     """
     if section not in ("who", "have", "want"):
         return error_response(
@@ -176,6 +177,12 @@ def intake(section: str, data: str) -> str:
             f"section 必须是 who/have/want，收到的是「{section}」",
             {"received": section, "valid": ["who", "have", "want"]},
         )
+
+    # 先校验再写入：坏 JSON 静默入库会污染工作流状态判定（BUG-007）
+    try:
+        _parse_json_param(data, f"{section} 数据")
+    except InvalidJsonError as exc:
+        return error_response(exc.code, exc.message, exc.details)
 
     profile = merge_section(section, data)
     return f"已记录到「{section}」。当前档案版本：v{profile.version}"

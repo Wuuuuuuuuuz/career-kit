@@ -45,16 +45,19 @@ fetch_jd_detail(url="https://www.zhipin.com/job_detail/xxx.html")
 
 ## 首次使用
 
-1. 安装依赖：`pip install iv8`
-2. 登录：运行 `python -m src.scrapers.boss.login`
-3. 在浏览器中完成登录
-4. 后续自动复用 cookies
+1. 安装依赖：`pip install -e .`（含 iv8 与 websockets）
+2. 登录：在本项目目录运行 `python -m src.scrapers.boss.login`
+   —— 会拉起一个独立 Chrome 窗口，在其中完成扫码登录后回车即可；
+   cookies 落盘后长期复用（过期重跑一次）
+3. 后续 `search` / `get_detail` 自动携带登录态
 
 ## 错误处理
 
 | 错误 | 原因 | 解决 |
 |------|------|------|
-| `需要登录` | cookies 不存在或过期 | 重新登录 |
+| `需要登录` | cookies 不存在或过期 | 重新运行上面的登录命令 |
 | `code=36` | 账户风控 | 等待 30 分钟 |
-| `code=37` | 需要 stoken | 自动计算（需安装 iv8） |
-| `stoken 计算失败` | iv8 未安装 | `pip install iv8` |
+| `code=37` | 需要 stoken | 自动计算 |
+| `stoken 计算失败` | 网络或 JS 拉取失败 | 重试；持续失败检查网络 |
+
+> 注：`salary` 参数为近似过滤，日薪岗可能混入结果（BOSS API 行为）。

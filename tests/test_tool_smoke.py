@@ -99,6 +99,33 @@ def test_save_gap_tolerates_malformed_values(temp_profile):
         assert "not-a-number" in result["message"]
 
 
+def test_intake_rejects_invalid_json(temp_profile):
+    """BUG-007 回归：非法 JSON 必须返回结构化错误且不写档案。"""
+    from src.server import intake
+
+    result = json.loads(intake(section="who", data="{oops 非法JSON"))
+    assert result.get("isError") is True
+    assert result["code"] == "INVALID_JSON"
+
+    profile = profile_module.load_profile()
+    assert not profile.who, "坏输入不应写入档案"
+    assert profile.version == 0
+
+
+def test_import_plan_rejects_binary_garbage(temp_profile):
+    """OBS-003 回归：控制字符垃圾内容返回结构化错误，不透传给 LLM。"""
+    from pathlib import Path
+
+    from src.server import import_plan
+
+    garbage = temp_profile / "garbage.md"
+    garbage.write_bytes(b"\x00\x01\x02binary junk \x1f\x03" * 50)
+
+    result = json.loads(import_plan(file_path=str(garbage)))
+    assert result.get("isError") is True
+    assert "\x00" not in result["message"] and "\x01" not in result["message"]
+
+
 def test_apply_insight_end_to_end(temp_profile):
     """BUG-005 回归：apply_insight 可导入、可执行、调整可落地。"""
     from src.models import Task

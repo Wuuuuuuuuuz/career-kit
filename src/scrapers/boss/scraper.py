@@ -1,7 +1,7 @@
 """BOSS 直聘 Scraper——requests + iv8 计算 stoken。
 
 核心思路：
-1. MCP 浏览器登录 → 保存 cookies（一次性）
+1. python -m src.scrapers.boss.login 扫码登录 → 保存 cookies（一次性）
 2. requests + cookies → 搜索/详情
 3. iv8 计算 __zp_stoken__（处理 code=37）
 """
@@ -215,7 +215,11 @@ class Scraper(CompanyScraper):
     def _search_api(self, keyword: str, city: str, limit: int) -> list[dict[str, Any]]:
         """通过 API 搜索岗位。"""
         if not has_valid_cookies():
-            return [{"error": "需要登录，请先运行 login()"}]
+            return [{"error": (
+                "需要登录 BOSS 直聘。请在 career-kit 项目目录运行：\n"
+                "    python -m src.scrapers.boss.login\n"
+                "按提示在浏览器完成扫码后回车即可；cookies 保存后长期有效（过期时重跑一次）。"
+            )}]
 
         cookies = load_cookies()
         stoken = get_stoken()
@@ -265,7 +269,9 @@ class Scraper(CompanyScraper):
     def _fetch_detail(self, url: str) -> dict[str, Any]:
         """获取岗位详情。"""
         if not has_valid_cookies():
-            return {"error": "需要登录"}
+            return {"error": (
+                "需要登录 BOSS 直聘。请在本项目目录运行：python -m src.scrapers.boss.login"
+            )}
 
         cookies = load_cookies()
         stoken = get_stoken()

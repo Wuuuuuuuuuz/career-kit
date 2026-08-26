@@ -44,7 +44,10 @@ pip install -e .
 
 ### 接入你的 AI Agent（一行命令）
 
-在 career-kit 目录下执行对应命令，注册为 MCP 服务器：
+> **解释器很重要**：注册命令里的 `python` 必须是执行过 `pip install -e .` 的那一个。
+> 本机存在多个 Python 时（系统/msys64/venv），裸 `python` 可能指向缺依赖的解释器。
+> 最稳妥写法是 venv 绝对路径，例如：
+> `claude mcp add career-kit -- D:\path\to\career-kit\.venv\Scripts\python.exe -m src.server`
 
 | Agent | 注册方式 |
 |-------|---------|
@@ -54,6 +57,21 @@ pip install -e .
 | Cursor / Windsurf | MCP 设置中手动添加：command=`python`，args=`["-m", "src.server"]` |
 
 > macOS 用户把 `python` 换成 `python3`。项目发布 PyPI 后将支持 `uvx career-kit` 免克隆使用。
+
+### 验证安装
+
+对新会话说「调用 start_session」，或直接敲 `/career-kit`——
+收到「欢迎使用 Career Kit」欢迎手册即接入成功。
+
+### 故障排查
+
+| 现象 | 处理 |
+|------|------|
+| 工具列表里没有 career-kit 的工具 | 确认注册命令在 career-kit 目录下执行；Claude Code 会话内用 `/mcp` 查看连接状态 |
+| 服务器启动即崩 / `No module named 'mcp'` | 注册用了错误解释器——改用 venv 绝对路径（见上方警告） |
+| 抓取工具报 Playwright 相关错误 | 先执行 `playwright install chromium` 安装浏览器内核 |
+| BOSS 直聘提示需要登录 | 在项目目录运行 `python -m src.scrapers.boss.login`，扫码后回车即可 |
+| opencode 不加载配置 | opencode 无 cwd 字段，command 数组里同样建议写 venv 绝对路径 |
 
 ### 斜杠命令（可选）
 
