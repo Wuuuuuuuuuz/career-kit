@@ -135,6 +135,21 @@ def test_boss_login_navigates_and_zero_param():
     assert "page.goto(ZHIPIN_URL" in login_src
     # 带参即打印用法退出，绝不带参拉起浏览器
     assert "len(sys.argv) > 1" in login_src
+    # 窗口尺寸由浏览器自适应用户屏幕：必须最大化、不得代码规定分辨率
+    # （教训：硬编码小视口看不全，硬编码满屏分辨率又超出可视区）
+    assert "--start-maximized" in login_src
+    assert "--window-size=" not in login_src
+    assert "viewport={" not in login_src  # 允许 no_viewport=True，禁止显式视口尺寸
+
+
+def test_nowcoder_playwright_cleanup_in_finally():
+    """nowcoder 爬虫的浏览器清理必须在 finally 中（曾因在 try 内导致异常路径泄漏进程）。"""
+    src = (Path(__file__).parent.parent / "src" / "scrapers" / "nowcoder" / "scraper.py").read_text(
+        encoding="utf-8"
+    )
+    assert "finally:" in src
+    assert "browser.close()" in src
+    assert "p.stop()" in src
 
 
 def test_apply_insight_end_to_end(temp_profile):

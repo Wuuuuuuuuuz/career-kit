@@ -160,13 +160,14 @@ class Scraper(CompanyScraper):
 
         try:
             p, browser, context = self._launch_browser()
-            page_obj = context.new_page()
+            try:
+                page_obj = context.new_page()
 
-            page_obj.goto(search_url, wait_until="domcontentloaded", timeout=30000)
-            page_obj.wait_for_timeout(3000)  # 等待 JS 渲染
+                page_obj.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+                page_obj.wait_for_timeout(3000)  # 等待 JS 渲染
 
-            # 从 DOM 提取搜索结果
-            results = page_obj.evaluate("""
+                # 从 DOM 提取搜索结果
+                results = page_obj.evaluate("""
                 () => {
                     const items = [];
                     // 搜索结果卡片的链接
@@ -212,9 +213,10 @@ class Scraper(CompanyScraper):
                     return items;
                 }
             """)
-
-            browser.close()
-            p.stop()
+            finally:
+                # 无论成功失败都必须释放浏览器，否则异常路径泄漏 Playwright 进程
+                browser.close()
+                p.stop()
         except Exception as e:
             return [{"error": f"Playwright 执行失败: {e}"}]
 
@@ -243,13 +245,14 @@ class Scraper(CompanyScraper):
         """通过 Playwright 访问详情页，从 DOM 提取面经全文。"""
         try:
             p, browser, context = self._launch_browser()
-            page_obj = context.new_page()
+            try:
+                page_obj = context.new_page()
 
-            page_obj.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page_obj.wait_for_timeout(2000)
+                page_obj.goto(url, wait_until="domcontentloaded", timeout=30000)
+                page_obj.wait_for_timeout(2000)
 
-            # 从 DOM 提取内容
-            data = page_obj.evaluate("""
+                # 从 DOM 提取内容
+                data = page_obj.evaluate("""
                 () => {
                     // 标题：优先 h1
                     const h1 = document.querySelector('h1');
@@ -267,9 +270,10 @@ class Scraper(CompanyScraper):
                     return { title, content, author };
                 }
             """)
-
-            browser.close()
-            p.stop()
+            finally:
+                # 异常路径也必须释放浏览器，避免每次失败泄漏一个 Playwright 进程
+                browser.close()
+                p.stop()
         except Exception as e:
             return {"error": f"详情页抓取失败: {e}"}
 

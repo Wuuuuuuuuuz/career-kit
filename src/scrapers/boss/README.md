@@ -47,9 +47,9 @@ fetch_jd_detail(url="https://www.zhipin.com/job_detail/xxx.html")
 
 1. 安装依赖：`pip install -e .`（含 iv8 与 patchright）
 2. 登录：在本项目目录运行 `python -m src.scrapers.boss.login`
-   —— patchright 拉起真实 Chrome → 扫码 → 工具自动检测登录态并落盘退出，
-   全程免手动确认；浏览器 profile 与 cookies 存于 `~/.career-kit/cache/boss/`，
-   长期复用（过期重跑一次）
+   —— patchright 拉起**系统默认浏览器（Chrome/Edge，绝不回退 Chromium）** → 扫码 →
+   工具自动检测登录态落盘并退出，全程免手动确认；浏览器 profile 与 cookies 存于
+   `~/.career-kit/cache/boss/`，长期复用（过期重跑一次）
 3. 后续 `search` / `get_detail` 自动携带登录态
 
 ## 错误处理

@@ -14,10 +14,11 @@ data/cache/
 .opencode/*
 !.opencode/commands/
 .mcp.json
+CLAUDE.md
+AGENTS.md
 screenshots/
 scripts/
 src/scrapers/*/cache/
 src/tools/__pycache__/
 .pytest_cache/
 tests/career-kit-test/
-CLAUDE.md

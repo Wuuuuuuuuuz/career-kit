@@ -941,6 +941,10 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
     # 阶段完成检测（排除已审计过的阶段）
     newly_completed = [pid for pid in completed_phase_ids(profile) if pid not in profile.audited_phases]
 
+    # 阶段 id → 用户可读的阶段名（提示里不能露 phase_1 这种内部 id）
+    _roadmap_phases = profile.plan.get("roadmap", profile.plan).get("phases", [])
+    _phase_names = {p.get("id"): p.get("name", p.get("id")) for p in _roadmap_phases}
+
     lines = []
     lines.append(f"✅ 已打卡：{task.name if task else task_id}")
     if status == "skipped":
@@ -948,7 +952,8 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
     lines.append("")
 
     if newly_completed:
-        lines.append(f"🎯 恭喜！你完成了阶段「{newly_completed[0]}」的全部任务。")
+        _name = _phase_names.get(newly_completed[0], newly_completed[0])
+        lines.append(f"🎯 恭喜！你完成了阶段「{_name}」的全部任务。")
         lines.append("建议调用 trigger_insight(trigger_type=\"stage_audit\") 进行阶段审计。")
         lines.append("")
 
