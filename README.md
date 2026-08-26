@@ -70,7 +70,7 @@ pip install -e .
 | 工具列表里没有 career-kit 的工具 | 确认注册命令在 career-kit 目录下执行；Claude Code 会话内用 `/mcp` 查看连接状态 |
 | 服务器启动即崩 / `No module named 'mcp'` | 注册用了错误解释器——改用 venv 绝对路径（见上方警告） |
 | 抓取工具报 Playwright 相关错误 | 先执行 `playwright install chromium` 安装浏览器内核 |
-| BOSS 直聘提示需要登录 | 在项目目录运行 `python -m src.scrapers.boss.login`，扫码后回车即可 |
+| BOSS 直聘提示需要登录 | 在项目目录运行 `python -m src.scrapers.boss.login`，浏览器弹出后扫码即可——检测到登录态自动保存退出，无需任何手动确认 |
 | opencode 不加载配置 | opencode 无 cwd 字段，command 数组里同样建议写 venv 绝对路径 |
 
 ### 斜杠命令（可选）

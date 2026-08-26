@@ -126,6 +126,17 @@ def test_import_plan_rejects_binary_garbage(temp_profile):
     assert "\x00" not in result["message"] and "\x01" not in result["message"]
 
 
+def test_boss_login_navigates_and_zero_param():
+    """BUG-009/OBS-004 回归：登录工具必须导航到 zhipin.com，且不接受参数拉起浏览器。"""
+    login_src = (Path(__file__).parent.parent / "src" / "scrapers" / "boss" / "login.py").read_text(
+        encoding="utf-8"
+    )
+    # 探针验证过 60 秒存活的 goto 必须存在于工具主流程（曾因丢失导致永久白屏）
+    assert "page.goto(ZHIPIN_URL" in login_src
+    # 带参即打印用法退出，绝不带参拉起浏览器
+    assert "len(sys.argv) > 1" in login_src
+
+
 def test_apply_insight_end_to_end(temp_profile):
     """BUG-005 回归：apply_insight 可导入、可执行、调整可落地。"""
     from src.models import Task

@@ -19,6 +19,7 @@ BOSS 前端用 Error.stack 序列化技巧检测该调用，附着后约 5 秒�
 
 from __future__ import annotations
 
+import sys
 import time
 
 from ...paths import CACHE_DIR
@@ -51,6 +52,17 @@ def login() -> bool:
 
     with sync_playwright() as p:
         ctx = _launch(p)
+
+        # 导航到登录页——persistent context 新 profile 无历史会话，必须显式打开
+        # （BUG-009：缺失此步会弹出永久空白窗口）
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto(ZHIPIN_URL, wait_until="domcontentloaded", timeout=30000)
+        except Exception as exc:
+            print(f"[!] 打开 zhipin.com 失败：{exc}\n[!] 请检查网络后重新运行本命令。")
+            ctx.close()
+            return False
+
         print("[login] Chrome 已启动，请扫码登录……检测到登录态将自动保存退出"
               f"（最长等待 {int(POLL_TIMEOUT_SEC)} 秒）")
         deadline = time.time() + POLL_TIMEOUT_SEC
@@ -73,7 +85,12 @@ def login() -> bool:
 
 
 def main() -> None:
-    import sys
+    # 本工具设计为零参数（OBS-004）：任何参数都可能是误操作，
+    # 直接打印用法退出，绝不带参拉起浏览器
+    if len(sys.argv) > 1:
+        print(__doc__.strip()[:400])
+        print("\n[!] 本工具不接受参数。直接运行 python -m src.scrapers.boss.login 即可。")
+        sys.exit(2)
     sys.exit(0 if login() else 1)
 
 
