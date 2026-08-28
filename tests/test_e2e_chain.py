@@ -555,6 +555,7 @@ def test_step8_mcp_tools_registered():
         "import_jd", "import_jd_file",
         # 档案管理
         "list_profiles", "switch_profile", "delete_profile",
+        "list_trash", "restore_profile",
         # 数据获取与分析
         "list_data_sources", "get_scraper_guide", "fetch_company_jobs",
         "fetch_jd_detail", "search_knowledge",

@@ -5,12 +5,17 @@
 - 当前活跃档案记录在 PROFILE_DIR/.active_profile，无记录时回退 "default"。
 - 不传 name 的所有读写操作都作用于当前活跃档案；
   显式传 name 的操作不受影响（测试/切换场景用）。
+
+删除采用回收站式：delete_profile 把档案移入 PROFILE_DIR/trash/ 而非直接删除，
+restore_profile 可从回收站恢复——用户数据是长期资产，删除必须可逆。
 """
 
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from ..models import CareerProfile
@@ -18,23 +23,44 @@ from ..paths import PROFILE_DIR
 
 ACTIVE_PROFILE_FILE = ".active_profile"
 
+# 档案名白名单：防止路径穿越（"../x"、子目录、非法字符一律拒绝）
+PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def validate_profile_name(name: str) -> str:
+    """校验档案名，非法时抛 ValueError。"""
+    if not name or not PROFILE_NAME_RE.match(name):
+        raise ValueError(
+            f"非法档案名「{name}」：只允许字母、数字、下划线、连字符"
+        )
+    return name
+
 
 def get_active_profile_name() -> str:
-    """读取当前活跃档案名，未设置时回退 "default"。"""
-    active_file = PROFILE_DIR / ACTIVE_PROFILE_FILE
+    """读取当前活跃档案名，未设置或档案已不存在时回退 "default"。"""
     try:
-        name = active_file.read_text(encoding="utf-8").strip()
-        if name:
-            return name
+        name = (PROFILE_DIR / ACTIVE_PROFILE_FILE).read_text(encoding="utf-8").strip()
     except OSError:
-        pass
-    return "default"
+        name = ""
+    if not name:
+        return "default"
+    # 悬挂检测：active 指向的档案被删除后回退 default，避免读写落到空档案
+    if not (PROFILE_DIR / f"{name}.json").exists():
+        return "default"
+    return name
 
 
 def set_active_profile_name(name: str) -> None:
     """把指定档案设为当前活跃档案。"""
+    validate_profile_name(name)
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     (PROFILE_DIR / ACTIVE_PROFILE_FILE).write_text(name, encoding="utf-8")
+
+
+def profile_exists(name: str) -> bool:
+    """档案文件是否存在。非法档案名抛 ValueError。"""
+    validate_profile_name(name)
+    return (PROFILE_DIR / f"{name}.json").exists()
 
 
 def list_profiles() -> list[dict[str, Any]]:
@@ -62,15 +88,78 @@ def list_profiles() -> list[dict[str, Any]]:
     return profiles
 
 
-def delete_profile(name: str) -> bool:
-    """删除指定档案。当前活跃档案禁止删除（防止误删正在使用的数据）。"""
-    if name == get_active_profile_name():
-        return False
+# === 回收站式删除 ===
+
+
+def _trash_dir() -> Path:
+    return PROFILE_DIR / "trash"
+
+
+def delete_profile(name: str) -> Path | None:
+    """把档案移入回收站（可恢复）。返回回收站文件路径，档案不存在返回 None。
+
+    非法档案名抛 ValueError。注意：回收站式删除是安全操作，允许删除当前
+    活跃档案——get_active_profile_name 会自动回退到 default。
+    """
+    validate_profile_name(name)
     path = PROFILE_DIR / f"{name}.json"
     if not path.exists():
-        return False
-    path.unlink()
-    return True
+        return None
+
+    trash_dir = _trash_dir()
+    trash_dir.mkdir(parents=True, exist_ok=True)
+
+    # 同名档案多次删除：加时间戳区分，保留所有历史
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target = trash_dir / f"{name}.json"
+    if target.exists():
+        target = trash_dir / f"{name}_{ts}.json"
+
+    path.rename(target)
+    return target
+
+
+def list_trash() -> list[dict[str, Any]]:
+    """列出回收站里的档案（可恢复项）。"""
+    trash_dir = _trash_dir()
+    if not trash_dir.exists():
+        return []
+    items = []
+    for path in sorted(trash_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        items.append({
+            "file": path.name,
+            "profile_name": _trash_base_name(path.name),
+            "deleted_at": datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
+        })
+    return items
+
+
+def _trash_base_name(filename: str) -> str:
+    """从回收站文件名还原档案名：alice.json → alice；alice_20260828_120000.json → alice。"""
+    return filename.split("_", 1)[0] if "_" in filename else Path(filename).stem
+
+
+def restore_profile(name: str) -> Path | None:
+    """从回收站恢复最新一份档案。回收站无此档案返回 None。
+
+    目标位置已存在同名档案时抛 ValueError（拒绝覆盖新数据，防误恢复）。
+    """
+    validate_profile_name(name)
+    target = PROFILE_DIR / f"{name}.json"
+    if target.exists():
+        raise ValueError(f"档案「{name}」已存在，拒绝覆盖——如需恢复请先处理现有档案")
+
+    trash_dir = _trash_dir()
+    if not trash_dir.exists():
+        return None
+
+    candidates = [p for p in trash_dir.glob(f"{name}*.json")]
+    if not candidates:
+        return None
+    # 取最新一份（mtime 最大）
+    latest = max(candidates, key=lambda p: p.stat().st_mtime)
+    latest.rename(target)
+    return target
 
 
 def load_profile(name: str | None = None) -> CareerProfile:
@@ -80,6 +169,8 @@ def load_profile(name: str | None = None) -> CareerProfile:
     """
     if name is None:
         name = get_active_profile_name()
+    else:
+        validate_profile_name(name)
     path = PROFILE_DIR / f"{name}.json"
     if path.exists():
         return CareerProfile.model_validate_json(path.read_text(encoding="utf-8"))
@@ -90,6 +181,8 @@ def save_profile(profile: CareerProfile, name: str | None = None) -> None:
     """保存档案到本地。name 为 None 时保存到当前活跃档案。"""
     if name is None:
         name = get_active_profile_name()
+    else:
+        validate_profile_name(name)
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     path = PROFILE_DIR / f"{name}.json"
     path.write_text(profile.model_dump_json(indent=2), encoding="utf-8")

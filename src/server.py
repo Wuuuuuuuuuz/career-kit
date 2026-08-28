@@ -26,11 +26,15 @@ from .tools.profile import (
     delete_profile as do_delete_profile,
     get_active_profile_name,
     list_profiles as do_list_profiles,
+    list_trash as do_list_trash,
     load_profile,
     merge_section,
+    profile_exists,
+    restore_profile as do_restore_profile,
     save_plan_snapshot,
     save_profile,
     set_active_profile_name,
+    validate_profile_name,
 )
 from .models import JourneyEntry
 from .tools.resume_parser import extract_text
@@ -131,6 +135,7 @@ def start_session() -> str:
     """
     return (
         f"{get_welcome_message()}\n\n"
+        f"当前档案：{get_active_profile_name()}\n"
         "下一步：请调用 intake 工具填充档案信息。\n"
         '示例：intake(section="who", data=\'{"name":"张三", "education":"计算机本科"}\')'
     )
@@ -388,9 +393,14 @@ def switch_profile(profile_name: str) -> str:
     Returns:
         切换结果 + 新档案的当前状态摘要。
     """
-    profiles = do_list_profiles()
-    if profile_name not in [p["name"] for p in profiles]:
-        available = ", ".join(p["name"] for p in profiles) or "无"
+    # 先校验命名与存在性，全部通过才写入 active——失败路径不污染当前状态
+    try:
+        validate_profile_name(profile_name)
+    except ValueError as e:
+        return error_response("INVALID_SECTION", str(e), {"profile_name": profile_name})
+
+    if not profile_exists(profile_name):
+        available = ", ".join(p["name"] for p in do_list_profiles()) or "无"
         return error_response(
             "MISSING_DATA",
             f"档案「{profile_name}」不存在。",
@@ -420,28 +430,35 @@ def switch_profile(profile_name: str) -> str:
 
 
 @mcp.tool()
-def delete_profile(profile_name: str) -> str:
-    """删除一份职业档案（不可恢复）。
+def delete_profile(profile_name: str, confirm: str = "") -> str:
+    """删除一份职业档案——移入回收站，可恢复。
 
-    何时调用：用户确认要废弃某份档案时。删除是永久操作，请先在对话中
-    与用户确认要删哪份、确认后执行；当前正在使用的档案禁止删除。
+    何时调用：用户确认要废弃某份档案时。删除是回收站式的：档案移入
+    本地回收站目录（trash/），可用 list_trash 查看、restore_profile 恢复，
+    不会真正丢失数据。
 
     Args:
         profile_name: 要删除的档案名（用 list_profiles 查看可用档案）
+        confirm: 必须显式传 "true" 才会执行；其他值只返回确认提示不删除
 
     Returns:
-        删除结果 + 剩余档案列表。
+        删除结果 + 回收站位置 + 恢复指引。
     """
-    active = get_active_profile_name()
-    if profile_name == active:
-        return error_response(
-            "INVALID_SECTION",
-            f"档案「{profile_name}」正在使用中，禁止删除。"
-            "如需删除，请先用 switch_profile 切换到其他档案。",
-            {"active": active},
+    if confirm != "true":
+        return (
+            f"⚠️ 即将删除档案「{profile_name}」——这是不可逆的用户决策，"
+            "请先与用户确认（展示该档案的身份/目标/更新时间），确认后重试：\n"
+            'delete_profile(profile_name="<档案名>", confirm="true")\n\n'
+            "说明：删除是回收站式的，档案会移入本地回收站（trash/），"
+            "恢复可用 restore_profile(profile_name=\"<档案名>\")。"
         )
 
-    if not do_delete_profile(profile_name):
+    try:
+        target_path = do_delete_profile(profile_name)
+    except ValueError as e:
+        return error_response("INVALID_SECTION", str(e), {"profile_name": profile_name})
+
+    if target_path is None:
         return error_response(
             "MISSING_DATA",
             f"档案「{profile_name}」不存在。",
@@ -451,9 +468,76 @@ def delete_profile(profile_name: str) -> str:
     remaining = do_list_profiles()
     remain_text = "、".join(p["name"] for p in remaining) or "无（仓库为空）"
     return (
-        f"已删除档案「{profile_name}」。\n\n"
+        f"已删除档案「{profile_name}」（移入回收站，可恢复）。\n\n"
+        f"回收站位置：{target_path}\n"
         f"剩余档案：{remain_text}\n"
-        f"当前使用：{get_active_profile_name()}"
+        f"当前使用：{get_active_profile_name()}\n\n"
+        "如需恢复：restore_profile(profile_name=\"<档案名>\")"
+    )
+
+
+@mcp.tool()
+def list_trash() -> str:
+    """列出回收站中的档案（已删除、可恢复项）。
+
+    何时调用：用户想知道删了哪些档案、能否恢复时。
+    恢复：restore_profile(profile_name=\"<档案名>\")。
+    """
+    items = do_list_trash()
+
+    if not items:
+        return "回收站为空——还没有删除过任何档案。"
+
+    lines = ["【回收站】已删除档案（可恢复）：\n"]
+    for item in items:
+        lines.append(
+            f"- **{item['profile_name']}**（文件：{item['file']}，删除于 {item['deleted_at'][:19]}）"
+        )
+    lines.append("")
+    lines.append("恢复：restore_profile(profile_name=\"<档案名>\")")
+    lines.append("注意：目标位置已存在同名档案时拒绝恢复（防覆盖新数据）。")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def restore_profile(profile_name: str) -> str:
+    """从回收站恢复档案。
+
+    何时调用：用户删除档案后又想找回时。恢复的是回收站中最新一份备份；
+    目标位置已存在同名档案时拒绝恢复（防覆盖新数据）。
+
+    Args:
+        profile_name: 要恢复的档案名（用 list_trash 查看可恢复项）
+
+    Returns:
+        恢复结果 + 档案摘要。
+    """
+    try:
+        target_path = do_restore_profile(profile_name)
+    except ValueError as e:
+        return error_response("INVALID_SECTION", str(e), {"profile_name": profile_name})
+
+    if target_path is None:
+        return error_response(
+            "MISSING_DATA",
+            f"回收站中没有档案「{profile_name}」。",
+            {"hint": "先调用 list_trash 查看可恢复项"},
+        )
+
+    profile = load_profile(profile_name)
+    parts = []
+    if profile.who:
+        parts.append(f"身份：{_summarize_dict(profile.who)}")
+    if profile.have:
+        parts.append(f"现状：{_summarize_dict(profile.have)}")
+    if profile.want:
+        parts.append(f"目标：{_summarize_dict(profile.want)}")
+    summary = "；".join(parts) if parts else "（档案为空）"
+
+    return (
+        f"已恢复档案「{profile_name}」。\n\n"
+        f"档案摘要：{summary}\n\n"
+        "如需继续规划，请用 switch_profile(profile_name=\"<档案名>\") 切换到该档案。"
     )
 
 
@@ -1475,6 +1559,7 @@ def get_workflow_status() -> str:
 
     lines = []
     lines.append(f"## 当前状态：{phase}")
+    lines.append(f"**当前档案**：{get_active_profile_name()}")
     lines.append("")
     if goal_change_alert:
         lines.append(goal_change_alert.rstrip())
