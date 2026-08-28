@@ -1,6 +1,6 @@
 # MCP 工具
 
-> Career Kit 提供的 MCP 工具，用于职业规划全流程（共 24 个）
+> Career Kit 提供的 MCP 工具，用于职业规划全流程（共 27 个）
 >
 > 核心理念：**顺序归产品，时间归用户**——不为任务设定时限；日程由 LLM 在对话中一次性产出 markdown/HTML 文档，系统不存储。
 
@@ -15,6 +15,14 @@
 | `import_jd` / `import_jd_file` | 导入目标 JD | 有目标岗位时 |
 | `intake` | 填充档案（who/have/want，技能带证据与置信度） | 逐步填充用户信息 |
 | `finalize_profile` | 确认档案并生成摘要 | 档案完整后 |
+
+### 档案管理工具
+
+| 工具 | 作用 | 调用时机 |
+|------|------|----------|
+| `list_profiles` | 列出所有档案（身份/目标/版本/当前使用） | 查看或选择档案时 |
+| `switch_profile` | 切换当前使用的档案 | 用户有多份档案想切换时 |
+| `delete_profile` | 删除档案（当前使用的档案禁止删除） | 用户确认废弃某档案时 |
 
 ### 数据获取工具
 
@@ -68,7 +76,7 @@
 
 | 分类 | 文件 | 文档 |
 |------|------|------|
-| 建档 | `src/tools/profile.py`, `src/tools/session.py`, `src/server.py` | 档案管理工具 |
+| 建档 | `src/tools/profile.py`, `src/tools/session.py`, `src/server.py` | 档案管理工具（含多档案切换） |
 | 数据获取 | `src/scrapers/loader.py`, `src/tools/knowledge_search.py` | 抓取与检索工具 |
 | 分析规划 | `src/tools/gap_analyzer.py`, `src/tools/roadmap.py` | 分析与路线图工具 |
 | 任务执行 | `src/tools/task_manager.py` | 任务管理工具 |

@@ -75,13 +75,16 @@ pip install -e .
 
 ### 斜杠命令（可选）
 
-- **Claude Code**：仓库已内置 `/career-kit [目标]`——在本目录启动 claude 即可直接使用；
-  想在任意目录用，复制到全局：`mkdir -p ~/.claude/commands && cp .claude/commands/career-kit.md ~/.claude/commands/`
-- **opencode**：同理内置 `.opencode/commands/career-kit.md`；全局版复制到 `~/.config/opencode/commands/`
-- **Codex CLI**：把 `.claude/commands/career-kit.md` 复制为 `~/.codex/prompts/career-kit.md`，
+- **Claude Code**：仓库已内置 `/career-kit [目标]`（职业陪练）与 `/career-kit-profile`（档案管理）——
+  在本目录启动 claude 即可直接使用；
+  想在任意目录用，复制到全局：`mkdir -p ~/.claude/commands && cp .claude/commands/*.md ~/.claude/commands/`
+- **opencode**：同理内置 `.opencode/commands/career-kit.md` 与 `.opencode/commands/career-kit-profile.md`；
+  全局版复制到 `~/.config/opencode/commands/`
+- **Codex CLI**：把 `.claude/commands/*.md` 复制为 `~/.codex/prompts/`，
   即可用 `/prompts:career-kit` 调用
 
 和 AI 说"我想转行"，或直接敲 `/career-kit 转行 AI Agent 工程师`。
+多份档案管理（选择/切换/删除）用 `/career-kit-profile`。
 
 ## 它能做什么？
 
