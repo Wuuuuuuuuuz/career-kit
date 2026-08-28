@@ -154,7 +154,7 @@ finalize_profile → 生成摘要，进入分析
 
 ## 6. MCP Tools 设计
 
-按工作流阶段分组（当前 24 个）：
+按工作流阶段分组（当前 30 个）：
 
 ### 建档阶段（状态机）
 
@@ -179,6 +179,7 @@ finalize_profile → 生成摘要，进入分析
 
 | Tool | 输入 | 输出 | 说明 |
 |------|------|------|------|
+| `explore_goals` | 无 | 方法论上下文 | 无目标时三轴定位选方向（能力×兴趣×真实市场数据），对话引导落定 want |
 | `analyze_gaps` / `save_gap_analysis` | gap_json | 差距分析 | 对比 have/want 与真实 JD |
 | `generate_roadmap` / `save_roadmap` | roadmap_json | 路线图 | 分阶段计划，无时长字段 |
 
@@ -197,7 +198,8 @@ finalize_profile → 生成摘要，进入分析
 ### 核心循环
 
 ```
-用户目标 → fetch_company_jobs（真实数据）
+有目标? ──否──> explore_goals（三轴定位选方向）→ intake(want) 落定
+  └──是──> 用户目标 → fetch_company_jobs（真实数据）
     → analyze_gaps → save_gap_analysis
     → generate_roadmap → save_roadmap
     → generate_tasks → get_next_tasks
@@ -206,7 +208,7 @@ finalize_profile → 生成摘要，进入分析
     → 回到任务执行
 ```
 
-每一轮循环都让规划更精确。
+每一轮循环都让规划更精确；方向选错随时可回来重新 explore_goals（选择归用户）。
 
 ### 工具面设计四原则
 

@@ -542,6 +542,66 @@ def restore_profile(profile_name: str) -> str:
 
 
 @mcp.tool()
+def explore_goals() -> str:
+    """目标选择——用户没有明确职业方向时，通过对话探索并选定目标。
+
+    返回方法论上下文。LLM 按照方法论指引，用三轴定位（能力轴=have ×
+    兴趣轴=对话挖掘 × 市场轴=fetch_company_jobs 真实数据）提出 2-3 个候选
+    方向（带假设与 Fit Filters），引导用户选择，最后用 intake(section="want")
+    落定目标。
+
+    何时调用：
+    - 用户说"我不知道想做什么" / "帮我选方向" / 完全没有目标时
+    - 建档后发现 want 为空或方向模糊（如只有"想转行"没有具体目标）
+
+    前置条件：档案已有 who/have（用户现状）。
+    后续步骤：用户选定后 intake(section="want") 写入，然后走 analyze_gaps。
+    """
+    profile = load_profile()
+
+    if not profile.who and not profile.have:
+        return error_response(
+            "MISSING_DATA",
+            "档案中还没有现状信息（who/have）。请先调用 intake 填充你是谁、会什么，"
+            "再帮你探索方向。",
+            {"missing": ["who", "have"]},
+        )
+
+    # 加载目标选择方法论
+    try:
+        ctx = build_methodology_context("goal_selection", profile)
+    except (FileNotFoundError, ValueError) as e:
+        return error_response("MISSING_DATA", f"目标选择方法论加载失败：{e}", {})
+
+    # 记录到 journey
+    profile.append_journey(JourneyEntry(
+        phase="analysis",
+        decision="启动目标选择",
+    ))
+    save_profile(profile)
+
+    return _json({
+        "methodology": ctx["methodology"],
+        "profile": ctx["profile"],
+        "existing_journey": [
+            {"phase": j.phase, "decision": j.decision, "timestamp": j.timestamp}
+            for j in (profile.journey or [])[-5:]
+        ],
+        "instructions": (
+            "请按照目标选择方法论指引，通过对话帮用户选定职业方向：\n"
+            "1. 先用 get_workflow_status / 档案信息摸清用户现状（零基础就如实对待，不美化）\n"
+            "2. 用对话挖掘兴趣轴与约束轴（Genie Goal 式提问，2-3 个问题一轮，不啰嗦）\n"
+            "3. 用 list_data_sources → fetch_company_jobs 抓真实岗位数据支撑候选方向，"
+            "绝不用 LLM 知识编造'热门方向'\n"
+            "4. 主动给出 2-3 个候选方向（标注假设 + Fit Filters + 零基础友好度），让用户纠正\n"
+            "5. 引导用户选择（1-10 打分），选定后用 intake(section='want') 写入档案，"
+            "如实记录 experience_level\n"
+            "6. 提示用户可继续 analyze_gaps 差距分析；方向不合适可随时回来重新探索"
+        ),
+    })
+
+
+@mcp.tool()
 def analyze_gaps() -> str:
     """对比现状（have）与目标（want/target_jd），输出差距分析。
 

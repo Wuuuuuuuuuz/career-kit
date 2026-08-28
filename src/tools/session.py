@@ -33,6 +33,9 @@ WELCOME_PROMPT = """\
    - 有 JD 文本/文件 → `import_jd` / `import_jd_file`
    - 只有方向描述 → `intake(section="want", ...)`
    - 想找真实岗位做目标 → 走下面的数据链路
+   - **完全没有目标 / 方向模糊**（如"想转行但不知道做什么"）→ `explore_goals`：
+     AI 教练用三轴定位（能力×兴趣×真实市场数据）提出 2-3 个候选方向，
+     对话引导用户选定后 intake(section="want") 落定——用户是零基础小白也要如实记录
 4. 搜索真实数据（主动做）：
    - `list_data_sources` → 查看可用企业数据源和参数
    - `get_scraper_guide(company=...)` → 首次使用某源前，读取该源的完整教程

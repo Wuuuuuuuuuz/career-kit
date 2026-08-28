@@ -24,6 +24,7 @@
 | `parse_resume` | 解析简历文件 |
 | `intake` | 填充档案（who/have/want） |
 | `finalize_profile` | 确认档案 |
+| `explore_goals` | 无目标时引导选方向（三轴定位：能力×兴趣×真实市场数据） |
 | `import_jd` / `import_jd_file` | 导入 JD（可选） |
 
 ### 流程
@@ -33,7 +34,10 @@
 2. intake(section="who", data='{"name":"张三", "education":"计算机本科"}')
 3. intake(section="have", data='{"skills":["Python"], "skill_evidence":[{"skill":"Python","evidence":"电商后端项目","confidence":"high"}]}')
    // 关键技能要追问证据：做过什么项目？讲一个难点？
-4. intake(section="want", data='{"target_role":"AI Agent 工程师", "salary":"20k-30k"}')
+4. 确定目标：
+   - 有明确目标 → intake(section="want", data='{"target_role":"AI Agent 工程师", "salary":"20k-30k"}')
+   - 没有目标/方向模糊 → explore_goals() 对话引导选定，再 intake(section="want") 落定
+   - 有 JD 文件 → import_jd_file(file_path) → import_jd()
 5. finalize_profile()
 ```
 

@@ -362,6 +362,57 @@ def test_export_dashboard_roadmap_map(temp_profile):
     assert "免 JD" in html                                 # learn 阶段徽标
 
 
+def test_explore_goals_returns_methodology(temp_profile):
+    """explore_goals 返回目标选择方法论上下文，供 LLM 引导用户定方向。"""
+    from src.server import explore_goals, intake
+
+    # 档案还没建档 → 结构化错误
+    result = json.loads(explore_goals())
+    assert result.get("isError") is True
+    assert result["code"] == "MISSING_DATA"
+
+    # 建档后 → 返回方法论
+    intake("who", '{"name": "小白", "status": "应届"}')
+    intake("have", '{"skills": [], "experience_level": "零基础"}')
+
+    out = json.loads(explore_goals())
+    assert not out.get("isError")
+    m = out["methodology"]
+    assert m["name"] == "目标选择"
+    assert m.get("principles"), "方法论应有 principles"
+    assert any("三轴" in p for p in m["principles"])
+    assert "fetch_company_jobs" in out["instructions"]
+    assert "intake" in out["instructions"]
+
+
+def test_explore_goals_records_journey(temp_profile):
+    """explore_goals 记录启动到 journey，不污染 want。"""
+    from src.server import explore_goals, intake
+
+    intake("who", '{"name": "小白"}')
+    intake("have", '{"skills": []}')
+
+    explore_goals()
+    profile = profile_module.load_profile()
+    assert profile.journey and profile.journey[-1].phase == "analysis"
+    assert profile.journey[-1].decision == "启动目标选择"
+    assert not profile.want, "explore_goals 不应直接写入目标——目标由用户在对话中选定后经 intake 写入"
+
+
+def test_explore_goals_methodology_yaml_exists():
+    """goal_selection.yaml 方法论文件存在且含关键纪律。"""
+    from src.tools.methodology import load_methodology
+
+    data = load_methodology("goal_selection")
+    assert data["name"] == "目标选择"
+    m = data["methodology"]
+    phases = {p["id"] for p in m["phases"]}
+    assert {"probe_reality", "gather_market", "propose_directions", "decide"} <= phases
+    text = str(m)
+    assert "experience_level" in text  # 零基础如实记录
+    assert "不编造" in text or "绝不" in text  # 数据纪律
+
+
 def test_apply_insight_end_to_end(temp_profile):
     """BUG-005 回归：apply_insight 可导入、可执行、调整可落地。"""
     from src.models import Task
