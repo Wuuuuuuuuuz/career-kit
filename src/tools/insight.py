@@ -230,14 +230,14 @@ def format_insight_report(insight_result: dict[str, Any]) -> str:
 
     status = insight_result.get("status", "unknown")
     status_icon = {
-        "on_track": "🟢",
-        "behind": "🟡",
-        "ahead": "🔵",
-        "need_adjustment": "🔴",
-        "unknown": "⚪",
-    }.get(status, "⚪")
+        "on_track": "正常",
+        "behind": "落后",
+        "ahead": "超前",
+        "need_adjustment": "需调整",
+        "unknown": "未知",
+    }.get(status, "未知")
 
-    lines.append(f"## {status_icon} 进度洞察")
+    lines.append(f"## 进度洞察（{status_icon}）")
     lines.append("")
 
     summary = insight_result.get("summary", "")
@@ -253,7 +253,7 @@ def format_insight_report(insight_result: dict[str, Any]) -> str:
         lines.append("")
 
     if insight_result.get("adjustment_needed"):
-        lines.append("### 🔄 调整建议")
+        lines.append("### 调整建议")
         lines.append(f"原因：{insight_result.get('adjustment_reason', '')}")
         lines.append("")
 

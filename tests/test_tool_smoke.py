@@ -271,7 +271,7 @@ def test_get_next_tasks_shows_full_overview(temp_profile):
     out = get_next_tasks()
     assert "全流程" in out
     assert "基础巩固" in out and "项目实战" in out
-    assert "⬅ 当前" in out  # 当前阶段有定位标记
+    assert "[当前]" in out  # 当前阶段有定位标记
 
 
 def test_roadmap_jd_fields_defaults():
@@ -358,7 +358,7 @@ def test_export_dashboard_roadmap_map(temp_profile):
     assert "待导入真实 JD" in html                        # 占位徽标
     assert "起点层级" in html and "中厂" in html           # start_level 展示
     assert "1/2" in html and "%" in html                   # 执行进度
-    assert "⬅ 当前" in html                                # 当前阶段高亮
+    assert "[当前]" in html                                # 当前阶段高亮
     assert "免 JD" in html                                 # learn 阶段徽标
 
 
@@ -525,3 +525,148 @@ def test_apply_insight_end_to_end(temp_profile):
     assert any(t.name == "任务A（深入）" for t in final.tasks)
     assert final.get_task("task_001").priority == "high"
     assert final.adjustments[-1].trigger_type == "stage_audit"
+
+
+# ============ 路线图质量硬校验（BUG-003 回归） ============
+
+
+def test_save_roadmap_hard_check_required_fields(temp_profile):
+    """硬校验：learn 外阶段缺 resume_value、KPI 缺量化指标 → 提示。"""
+    from src.server import intake, save_roadmap
+
+    intake("who", '{"name": "张三", "graduation_year": "2028"}')
+    intake("have", '{"skills": ["Python"], "experience_level": "小厂"}')
+    intake("want", '{"target_role": "AI 工程师"}')
+
+    roadmap = {
+        "roadmap": {
+            "strategy_summary": "测试",
+            "start_level": "小厂",
+            "phases": [
+                {"type": "intern", "name": "某公司实习", "company": "某公司", "target_level": "小厂"},
+                {"type": "project", "name": "做项目", "kpi": {"metric": "完成1个项目", "target": "1个"}},
+            ],
+        }
+    }
+    result = json.loads(save_roadmap(json.dumps(roadmap, ensure_ascii=False)))
+    msg = result["message"]
+    assert "硬校验" in msg
+    assert "resume_value" in msg
+    assert result["context"]["hard_issues"], "应收集到必填缺失问题"
+
+
+def test_save_roadmap_hard_check_level_jump(temp_profile):
+    """硬校验：起点小厂但 intern 目标大厂 → 超连续范围提示。"""
+    from src.server import intake, save_roadmap
+
+    intake("who", '{"name": "张三"}')
+    intake("have", '{"skills": ["Python"], "experience_level": "小厂"}')
+    intake("want", '{"target_role": "AI 工程师"}')
+
+    roadmap = {
+        "roadmap": {
+            "strategy_summary": "测试",
+            "start_level": "小厂",
+            "phases": [
+                {"type": "intern", "name": "大厂实习", "company": "某大厂",
+                 "target_level": "大厂", "resume_value": "大厂实习经历",
+                 "kpi": {"metric": "入职", "target": "1个"}},
+            ],
+        }
+    }
+    result = json.loads(save_roadmap(json.dumps(roadmap, ensure_ascii=False)))
+    assert "超出起点" in result["message"] or "高于起点" in result["message"]
+
+
+def test_save_roadmap_hard_check_graduation(temp_profile):
+    """硬校验：阶段面向届早于用户毕业届 → 届别不匹配提示。"""
+    from src.server import intake, save_roadmap
+
+    intake("who", '{"name": "张三", "graduation_year": "2028"}')
+    intake("have", '{"skills": ["Python"]}')
+    intake("want", '{"target_role": "AI 工程师"}')
+
+    roadmap = {
+        "roadmap": {
+            "strategy_summary": "测试",
+            "phases": [
+                {"type": "intern", "name": "2027届实习", "company": "某公司",
+                 "graduation_year": "2027", "resume_value": "实习经历",
+                 "kpi": {"metric": "入职", "target": "1个"}},
+            ],
+        }
+    }
+    result = json.loads(save_roadmap(json.dumps(roadmap, ensure_ascii=False)))
+    assert "面向届 2027" in result["message"] and "2028" in result["message"]
+
+
+def test_save_roadmap_no_start_level_passes(temp_profile):
+    """无 start_level/届别数据时放行（有数据才挡，兼容旧数据）。"""
+    from src.server import intake, save_roadmap
+
+    intake("who", '{"name": "张三"}')
+    intake("have", '{"skills": ["Python"]}')
+    intake("want", '{"target_role": "AI 工程师"}')
+
+    roadmap = {
+        "roadmap": {
+            "strategy_summary": "测试",
+            "phases": [
+                {"type": "project", "name": "做项目", "resume_value": "项目经历",
+                 "kpi": {"metric": "完成", "target": "1个"}},
+            ],
+        }
+    }
+    result = json.loads(save_roadmap(json.dumps(roadmap, ensure_ascii=False)))
+    assert result["context"]["phase"] == "roadmap_saved"
+    assert not result["context"]["hard_issues"]
+
+
+def test_intake_who_guides_graduation_year(temp_profile):
+    """intake(who)：无毕业届时返回引导；已填则不重复提示。"""
+    from src.server import intake
+
+    out = intake("who", '{"name": "张三"}')
+    assert "graduation_year" in out
+
+    out2 = intake("who", '{"graduation_year": "2028"}')
+    assert "graduation_year" not in out2
+
+
+def test_roadmap_yaml_has_rubric_and_audit():
+    """SOP 规则化：roadmap.yaml 含 start_level 打分表与审计清单；resume_screening 含负面信号。"""
+    from pathlib import Path
+    import yaml
+
+    sop_dir = Path(__file__).parent.parent / "sop"
+    roadmap = yaml.safe_load((sop_dir / "roadmap.yaml").read_text(encoding="utf-8"))
+    m = roadmap["methodology"]
+    assert "start_level_rubric" in m, "roadmap.yaml 缺 start_level 打分表"
+    assert "dimensions" in m["start_level_rubric"], "打分表缺维度"
+    assert "mapping" in m["start_level_rubric"], "打分表缺档位映射"
+    assert "audit_checklist" in m, "roadmap.yaml 缺审计清单"
+    assert len(m["audit_checklist"]["items"]) >= 5, "审计清单项数不足"
+
+    resume = yaml.safe_load((sop_dir / "resume_screening.yaml").read_text(encoding="utf-8"))
+    assert "resume_red_flags" in resume["methodology"]["output_schema"], "缺负面信号审计输出字段"
+
+
+def test_generate_roadmap_returns_step_template(temp_profile):
+    """generate_roadmap 返回 step_template（6 步工作流）。"""
+    from src.server import generate_roadmap, intake, save_gap_analysis
+
+    intake("who", '{"name": "张三"}')
+    intake("have", '{"skills": ["Python"]}')
+    intake("want", '{"target_role": "AI 工程师"}')
+    save_gap_analysis(json.dumps({
+        "match_score": 50, "match_level": "partial_match",
+        "skill_gaps": [{"skill": "AI", "priority": "high", "current_level": "无",
+                        "required_level": "入门", "how_to_improve": "学习", "source": "测试"}],
+    }, ensure_ascii=False))
+
+    out = _parse(generate_roadmap())
+    assert "step_template" in out
+    assert len(out["step_template"]) == 6
+    assert out["step_template"][0]["name"] == "起点判定"
+    assert out["step_template"][0]["checkpoint"] is True
+    assert any(s["name"] == "审计" for s in out["step_template"])

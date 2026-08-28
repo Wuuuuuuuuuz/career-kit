@@ -201,7 +201,7 @@ def test_format_roadmap():
     assert "LeetCode" in report
     assert "简历价值" in report
     assert "LangChain" in report
-    assert "🔴" in report or "🟡" in report
+    assert "[高]" in report or "[中]" in report or "[低]" in report
     assert "交付物" in report
     assert "完成标准" in report
     print("[OK] 路线图格式化成功")

@@ -32,10 +32,10 @@ def format_gap_report(gap: dict[str, Any]) -> str:
 
     level = gap.get("match_level", "")
     level_text = {
-        "strong_match": "强烈匹配 ⭐⭐⭐⭐⭐",
-        "good_match": "良好匹配 ⭐⭐⭐⭐",
-        "partial_match": "部分匹配 ⭐⭐⭐",
-        "weak_match": "匹配度低 ⭐⭐",
+        "strong_match": "强烈匹配",
+        "good_match": "良好匹配",
+        "partial_match": "部分匹配",
+        "weak_match": "匹配度低",
     }.get(level, "")
 
     if score is None:
@@ -49,7 +49,7 @@ def format_gap_report(gap: dict[str, Any]) -> str:
     # === 优势 ===
     strengths = gap.get("strengths", [])
     if strengths:
-        lines.append("## ✅ 你的优势")
+        lines.append("## 你的优势")
         for s in strengths:
             if isinstance(s, dict):
                 lines.append(f"- **{s.get('area', '')}**：{s.get('description', '')}")
@@ -64,7 +64,7 @@ def format_gap_report(gap: dict[str, Any]) -> str:
     # === 简历优化（简历过筛） ===
     resume_opt = gap.get("resume_optimization", {})
     if resume_opt:
-        lines.append("## 📝 简历优化（过筛指南）")
+        lines.append("## 简历优化（过筛指南）")
         lines.append("")
 
         ats_keywords = resume_opt.get("ats_keywords", [])
@@ -108,7 +108,7 @@ def format_gap_report(gap: dict[str, Any]) -> str:
     # === 面试准备（面试通过） ===
     interview = gap.get("interview_preparation", {})
     if interview:
-        lines.append("## 🎯 面试准备（通关指南）")
+        lines.append("## 面试准备（通关指南）")
         lines.append("")
 
         must_prepare = interview.get("must_prepare", [])
@@ -116,7 +116,7 @@ def format_gap_report(gap: dict[str, Any]) -> str:
             lines.append("### 必考题（必须准备）")
             for item in must_prepare:
                 priority = item.get('priority', 'medium')
-                priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(priority, '⚪')
+                priority_icon = {"high": "[高]", "medium": "[中]", "low": "[低]"}.get(priority, '[中]')
                 time_est = f" ~{item['estimated_time']}" if item.get('estimated_time') else ""
                 lines.append(f"- {priority_icon} **{item.get('topic', '')}** [{item.get('type', '')}]{time_est}")
                 if item.get('prepare_advice'):
@@ -174,7 +174,7 @@ def format_gap_report(gap: dict[str, Any]) -> str:
     # === 技能差距 ===
     skill_gaps = gap.get("skill_gaps", [])
     if skill_gaps:
-        lines.append("## 📚 技能差距")
+        lines.append("## 技能差距")
 
         # 兼容字符串条目（LLM 输出退化时）
         dict_gaps = [g for g in skill_gaps if isinstance(g, dict)]
@@ -186,7 +186,7 @@ def format_gap_report(gap: dict[str, Any]) -> str:
         if explicit:
             lines.append("### 显性要求（JD 上写的）")
             for priority in ['high', 'medium', 'low']:
-                icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}[priority]
+                icon = {"high": "[高]", "medium": "[中]", "low": "[低]"}[priority]
                 for g in [g for g in explicit if g.get('priority') == priority]:
                     lines.append(f"- {icon} **{g.get('skill', '')}**：{g.get('current_level', '?')} → {g.get('required_level', g.get('target_level', '?'))}")
                     if g.get('how_to_improve'):
@@ -196,7 +196,7 @@ def format_gap_report(gap: dict[str, Any]) -> str:
             lines.append("")
             lines.append("### 隐性要求（JD 没写但实际考核的）")
             for g in hidden:
-                priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(g.get('priority'), '⚪')
+                priority_icon = {"high": "[高]", "medium": "[中]", "low": "[低]"}.get(g.get('priority'), '[中]')
                 lines.append(f"- {priority_icon} **{g.get('skill', '')}**：{g.get('current_level', '?')} → {g.get('required_level', g.get('target_level', '?'))}")
                 if g.get('how_to_improve'):
                     lines.append(f"  - 提升建议：{g['how_to_improve']}")
@@ -208,7 +208,7 @@ def format_gap_report(gap: dict[str, Any]) -> str:
     # === 优先行动项 ===
     actions = gap.get("priority_actions", [])
     if actions:
-        lines.append("## 🚀 优先行动项")
+        lines.append("## 优先行动项")
         for i, a in enumerate(actions, 1):
             if isinstance(a, dict):
                 lines.append(f"{i}. **{a.get('action', a.get('description', ''))}**")
@@ -225,7 +225,7 @@ def format_gap_report(gap: dict[str, Any]) -> str:
     # === 市场背景 ===
     market = gap.get("market_context", "")
     if market:
-        lines.append("## 📊 市场背景")
+        lines.append("## 市场背景")
         lines.append(market)
         lines.append("")
 

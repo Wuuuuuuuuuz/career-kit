@@ -1,6 +1,6 @@
 name: 简历过筛
-version: "2.0"
-description: 从 ATS 关键词、项目包装、简历结构三个维度优化简历，通过 ATS 和 HR 筛选
+version: "3.0"
+description: 从 ATS 关键词、项目包装、简历结构、负面信号审计四个维度优化简历，通过 ATS 和 HR 筛选，并产出 start_level（起点层级判定）
 
 methodology:
   principles:
@@ -11,6 +11,8 @@ methodology:
     - "隐藏需求（文化匹配、软技能暗示）往往被忽略但影响终面"
     - "简历有美化成分——对用户声称的关键技能要追问证据（做过什么项目、讲一个难点），have 中的技能条目尽量带 evidence（证据）与 confidence（置信度），摸清真实水平再分析"
     - "起点决定路径——综合学历、经历、技能证据评估用户当前可进入的企业层级（start_level），这是后续路线图中 intern/过渡阶段的起点约束"
+    - "反向审计简历弱点——公司规模、独立开发/无协作、实习时长过短、数据不可解释等雷点信号必须识别并给出对策，不能只做正面包装"
+    - "负面信号必须如实计入 start_level 打分——独立开发无协作、小公司、时长短会拉低可进入层级，不得美化"
 
   phases:
     - id: gather_data
@@ -36,17 +38,24 @@ methodology:
     - id: analyze_gaps
       name: 差异分析
       guidance: |
-        对比用户现状与对标数据，从四个维度深入分析差距：
+        对比用户现状与对标数据，从五个维度深入分析差距：
         1. 关键词覆盖：用户简历 vs ATS 关键词库，缺了哪些
         2. 项目匹配：用户的项目经验 vs 岗位要求，如何重新包装
         3. 结构问题：简历结构是否符合行业标准，层次是否清晰
         4. 量化程度：是否有数据支撑，哪些地方需要补充量化
+        5. 负面信号审计：扫描会被 HR/面试官挑刺的信号——
+           - 公司规模（非技术小公司、无大流量/规范化工程场景）
+           - 独立开发（缺乏多人协作、代码评审、分工配合经历）
+           - 实习时长过短（仅 1 段 3 个月等）
+           - 数据不可解释（量化结果说不清口径/来源）
+           - 职责含混（项目里到底做了什么说不清）
+           每个负面信号给出：风险（为什么会被挑刺）+ 叙事弱化方案 + 补证据动作
         每个差距都要给出具体的弥补方向，不能泛泛而谈。
       data_needs:
         - type: user_have
           query_hint: "从 profile 中获取"
           local_paths: []
-      quality_gate: "四个维度均有具体差距项，每个差距有明确描述"
+      quality_gate: "五个维度均有具体差距项，每个差距有明确描述；负面信号审计必须覆盖独立开发/协作/时长度"
       depends_on: [gather_data]
 
     - id: generate_advice
@@ -58,12 +67,14 @@ methodology:
         3. 项目包装方案——每个项目用 STAR 法则重新包装，给出量化结果表述
         4. 简历修改建议——结构、措辞、排版等具体修改点
         5. 补充经历建议——缺失的经历类型及如何在短时间内创造
+        6. 负面信号对策——针对独立开发等雷点：如何用叙事弱化（如强调跨角色沟通、
+           主动推进），如何补团队协作证据（开源 PR 协作、组队 hackathon、code review 记录）
         建议必须具体到可直接修改的程度，不能只给方向。
       data_needs:
         - type: user_have
           query_hint: "从 profile 中获取"
           local_paths: []
-      quality_gate: "每条建议可直接执行，项目包装包含 STAR 框架和量化结果"
+      quality_gate: "每条建议可直接执行，项目包装包含 STAR 框架和量化结果；负面信号有叙事弱化+补证据双对策"
       depends_on: [analyze_gaps]
 
   output_schema:
@@ -72,4 +83,5 @@ methodology:
     highlight_projects: "项目包装方案（项目名 + STAR 包装 + 量化结果）"
     resume_tips: "具体的简历修改建议（结构、措辞、排版）"
     missing_experiences: "建议补充的经历类型及创造方式"
-    start_level: "当前可进入的企业层级档位（大厂/中厂/小厂）——由学历、经历、技能证据综合判断，供路线图设计对齐起点"
+    start_level: "当前可进入的企业层级档位（大厂/中厂/小厂/暂不可入）——按 roadmap.yaml 的 start_level_rubric 打分表逐维度评分后映射，不是直觉判定"
+    resume_red_flags: "负面信号审计结果（signal 信号 + risk 风险 + narrative_fix 叙事弱化 + evidence_fix 补证据动作）"

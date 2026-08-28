@@ -1,6 +1,6 @@
 name: 路线图生成
-version: "4.0"
-description: 从差距分析出发，生成可执行的分阶段职业路线图。产品不规划时间——只定义顺序、产出与完成标准，节奏由用户掌握
+version: "5.0"
+description: 从差距分析出发，生成可执行的分阶段职业路线图。产品不规划时间——只定义顺序、产出与完成标准，节奏由用户掌握。分步产出 + 审计门禁：起点判定→目标拆解→阶段序列→逐阶段细化→审计→定稿
 
 methodology:
   principles:
@@ -14,6 +14,10 @@ methodology:
        没有的引导用户导入，两者都没有就只写阶段目标与完成标准，绝不编造要求细节"
     - "起点决定路径：intern/过渡阶段必须从 gap.start_level（用户当前可进入的企业层级）出发，
        目标超起点时插入过渡阶段，而不是直接规划进不去的企业"
+    - "分步产出，禁止一步到位：起点判定、目标拆解、阶段序列、逐阶段细化必须分步完成，
+       每步产出中间产物并经用户/审计确认，避免把全部决策压缩进一次输出导致想当然"
+    - "层级连续铁律：任何 intern 阶段的目标层级不得超过 start_level+1；
+       跨越层级时必须在中间插入过渡阶段（如先进可进入的中小厂攒经历）"
 
   phases:
     - id: gather_market_data
@@ -38,14 +42,41 @@ methodology:
     - id: design_roadmap
       name: 设计路线图
       guidance: |
-        LLM 动态设计阶段划分、KPI、里程碑与任务。分三步：
+        按 6 步工作流分步产出，禁止一步到位。每一步有明确中间产物，步骤 1/3/6 需用户确认。
 
-        第一步——起点对齐：
-        - 读取 gap.start_level（差距分析已产出），与用户经历、能力证据交叉核对，
-          确定「当前可进入的企业层级」（大厂/中厂/小厂）
-        - 梳理需要弥补的技能、需要创造的经历（项目/实习/研究等）
+        【步骤 1｜起点判定】（用户确认）
+        - 用下方 start_level 打分表，对用户逐维度打分，得出总分并映射档位（大厂/中厂/小厂/暂不可入）
+        - 输出：start_level（档位）+ 各维度得分 + 判定依据（为什么是这个档位）
+        - 与 gap.start_level 交叉核对：不一致时以打分表计算结果为准，说明原因
 
-        第二步——路线图设计（阶段类型与 jd 三件套）：
+        【步骤 2｜目标拆解】
+        - 从 want/target_jd 提取目标角色、目标公司层级
+        - 判断「目标层级 - 起点层级」的跨度，得出需要插入的过渡级数
+        - 输出：目标层级 + 跨度 + 过渡级数
+
+        【步骤 3｜阶段序列】（用户确认）
+        - 按「起点→目标」设计阶段序列（learn → project → intern → ...）
+        - 层级连续铁律：intern 目标层级 ≤ start_level+1，跨越必须插过渡阶段
+        - 每个阶段标注：类型、目标、对齐的层级、过渡理由
+        - 输出：完整阶段序列 + 每阶段一句话定位
+
+        【步骤 4｜逐阶段细化】
+        - 对每个阶段深入展开，不是列名式走过场：
+          - KPI：量化指标 + 目标值 + 验证证据（怎么证明达成）
+          - 里程碑：2-3 个，每个有明确完成标准（done_criteria）
+          - 任务：粒度「一次坐下来可完成」，含 name/description/priority
+          - jd 三件套：company/rationale（常识可写）+ jd/jd_status（真实数据才填）
+
+        【步骤 5｜审计】
+        - 调 career-roadmap-auditor 按审计清单逐项检查完整雏形
+        - FAIL → 按修正项打回步骤 4 修正 → 重审（≤2 轮）
+        - 仍 FAIL → 明示未通过项，请用户决定是否手动调整后定稿
+
+        【步骤 6｜定稿】（用户确认）
+        - 一次性展示全流程雏形（所有阶段/目标/KPI/里程碑/顺序理由），用户确认
+        - 确认后调用 save_roadmap(roadmap_json)
+
+        阶段类型规范：
         - learn（学习技能）：刷题、学框架、考认证、看文档、跟教程。resume_value 通常为空。
           jd_status = not_required。
         - project（做项目）：独立项目、开源贡献、黑客马拉松、技术博客。必须有 resume_value。
@@ -55,19 +86,6 @@ methodology:
           有真实 JD 数据时 jd 填要求细节、jd_status = has_jd；
           没有真实 JD 时 jd 保持空、jd_status = pending_user_import。
         - research（研究）：发论文、做课题、参与实验室项目。必须有 resume_value。
-
-        第三步——过渡阶段与占位：
-        - 目标企业层级高于 start_level 时，插入过渡阶段（如先进一家可进入的中小厂攒经历）
-        - 过渡阶段可以写具体公司名 + rationale，但 jd 细节必须等真实 JD
-        - 占位阶段在用户确认后 confirmed 置 true（用户已接受「先占位后补JD」）
-
-        设计原则：
-        1. 阶段顺序由 LLM 根据实际情况决定，没有固定模式
-        2. learn 阶段通常在最前面，为后续阶段打基础
-        3. 每个阶段必须有量化指标（KPI），但不得包含时间承诺
-        4. project/intern/research 阶段必须有 resume_value
-        5. 每个阶段拆成 2-3 个里程碑，每个里程碑有明确完成标准
-        6. 任务粒度到「一次坐下来可完成」的粒度，但不估算天数
       data_needs:
         - type: gap_summary
           query_hint: "从 profile.gap 中获取（含 start_level）"
@@ -79,8 +97,118 @@ methodology:
           query_hint: "从 profile 中获取"
           local_paths: []
       quality_gate: "每个阶段有 KPI 和 resume_value（learn 类型除外），每个里程碑有完成标准，
-      全程无时长字段；intern 阶段符合 jd 三件套约束（有据填 jd，无据占位）"
+      全程无时长字段；intern 阶段符合 jd 三件套约束（有据填 jd，无据占位）；
+      通过 career-roadmap-auditor 审计（届别/层级/起点/前置/量化/jd 三件套）"
       depends_on: [gather_market_data]
+
+  start_level_rubric:
+    description: "start_level 判定打分表——逐维度打分后映射档位。维度分数 0-5，总分 = 加权和"
+    dimensions:
+      - name: education
+        label: 学历档位
+        description: "目标行业对学历的敏感度越高，权重越高"
+        weight: 0.25
+        levels:
+          - score: 5
+            desc: "目标行业主流院校（如计算机行业 985/211 或硕士+）"
+          - score: 3
+            desc: "目标行业认可院校（如双非一本但对口）"
+          - score: 1
+            desc: "专科/跨专业无相关背景"
+      - name: internship
+        label: 实习规模与时长
+        description: "实习所在公司层级 × 时长，体现实际业务场景"
+        weight: 0.30
+        levels:
+          - score: 5
+            desc: "大厂实习 6 个月+，或中厂 12 个月+"
+          - score: 4
+            desc: "大厂实习 3-6 个月"
+          - score: 3
+            desc: "中厂实习 3-6 个月，或小厂实习 6 个月+"
+          - score: 2
+            desc: "小厂实习 3-6 个月"
+          - score: 1
+            desc: "小厂/无知名公司实习 3 个月以内"
+          - score: 0
+            desc: "无实习经历"
+      - name: collaboration
+        label: 团队协作经历
+        description: "多人协作、代码评审、跨角色配合——大厂最看重的信号"
+        weight: 0.15
+        levels:
+          - score: 5
+            desc: "有团队协作 + 代码评审 + 跨角色沟通的完整证据"
+          - score: 3
+            desc: "有团队协作经历，但缺乏评审/沟通细节"
+          - score: 1
+            desc: "独立开发为主，无协作证据（负面信号）"
+          - score: 0
+            desc: "无任何团队项目经历"
+      - name: skill_depth
+        label: 技能深度
+        description: "核心技能的 evidence/confidence 质量（用户确认而非简历字面）"
+        weight: 0.20
+        levels:
+          - score: 5
+            desc: "核心技能有用户确认的 evidence + 现场讲得出难点"
+          - score: 3
+            desc: "技能有 evidence 但未经用户逐项确认"
+          - score: 1
+            desc: "技能仅有简历字面，无证据"
+      - name: project_complexity
+        label: 项目复杂度
+        description: "项目规模、技术深度、是否独立承担关键模块"
+        weight: 0.10
+        levels:
+          - score: 5
+            desc: "复杂系统/高并发/算法级，独立承担核心模块"
+          - score: 3
+            desc: "完整应用/项目，有明确用户或交付"
+          - score: 1
+            desc: "练习/教程级项目，无实际使用"
+    mapping:
+      - min: 4.0
+        level: 大厂
+      - min: 3.0
+        max: 4.0
+        level: 中厂
+      - min: 2.0
+        max: 3.0
+        level: 小厂
+      - min: 0.0
+        max: 2.0
+        level: 暂不可入
+    usage: |
+      逐维度打分后计算加权总分，按 mapping 映射档位。
+      档位是「当前可进入的企业层级」——不是个人价值判定，只决定路线图起点。
+      跨度规则：intern 目标层级 ≤ start_level+1；暂不可入 → 先进学习+项目阶段，暂无实习。
+      负面信号（独立开发无协作/时长短/公司规模小）必须在维度分中如实体现，不得美化。
+
+  audit_checklist:
+    description: "路线图审计清单——career-roadmap-auditor 逐项检查，也是 save_roadmap 程序硬校验的依据"
+    items:
+      - id: start_alignment
+        label: 起点对齐
+        check: "第一阶段的起点层级不超过 start_level；无 start_level 时评估是否有过度乐观"
+      - id: level_continuity
+        label: 层级连续
+        check: "任何 intern 阶段目标层级 ≤ start_level+1；跨越时插入了过渡阶段"
+      - id: graduation_match
+        label: 届别匹配
+        check: "阶段面向届与用户毕业届匹配；不排用户投不进的届别岗位（如 2028 届不排仅面向 2027 届的岗位）"
+      - id: prerequisite
+        label: 前置补全
+        check: "目标为大厂/高门槛岗位时，协作证据/技能深度未达标前有前置补强阶段，不直接排目标阶段"
+      - id: quantifiable
+        label: 量化充分
+        check: "每阶段 KPI 有数字指标与验证证据；里程碑有明确完成标准（done_criteria），非'学会'模糊表述"
+      - id: jd_discipline
+        label: jd 三件套
+        check: "公司名/推荐理由是常识可写；JD 细节有真实数据（has_jd）或无据占位（pending_user_import），不编造"
+    verdict:
+      - pass: "全部通过"
+      - fail: "任一不通过 → 给出修正项（引用清单 id + 具体问题 + 修改建议），打回生成方修正，≤2 轮"
 
   output_schema:
     strategy_summary: "整体策略说明（一段话）"

@@ -246,26 +246,26 @@ def format_task_list(tasks: list[Task], title: str = "任务列表") -> str:
     if in_progress:
         lines.append("### 进行中")
         for t in in_progress:
-            lines.append(f"- 🔵 **{t.name}** (ID: {t.id})")
+            lines.append(f"-  **{t.name}** (ID: {t.id})")
         lines.append("")
 
     if pending:
         lines.append("### 待办")
         for t in pending:
-            icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t.priority, "⚪")
+            icon = {"high": "[高]", "medium": "[中]", "low": "[低]"}.get(t.priority, "[中]")
             lines.append(f"- {icon} **{t.name}** (ID: {t.id})")
         lines.append("")
 
     if completed:
-        lines.append("### ✅ 已完成")
+        lines.append("### 已完成")
         for t in completed:
-            lines.append(f"- ✅ {t.name}")
+            lines.append(f"-  {t.name}")
         lines.append("")
 
     if skipped:
-        lines.append("### ⏭️ 已跳过")
+        lines.append("### 已跳过")
         for t in skipped:
-            lines.append(f"- ⏭️ {t.name}")
+            lines.append(f"- {t.name}")
         lines.append("")
 
     return "\n".join(lines)
@@ -283,15 +283,15 @@ def format_progress_overview(profile: CareerProfile) -> str:
     bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
 
     lines = [
-        f"## 📊 整体进度：{pct}% [{bar}]",
+        f"## 整体进度：{pct}% [{bar}]",
         "",
         f"总计 {total} 个任务：",
-        f"- ✅ 已完成：{completed}",
-        f"- 🔵 进行中：{in_progress}",
-        f"- ⚪ 待办：{pending}",
+        f"-  已完成：{completed}",
+        f"-  进行中：{in_progress}",
+        f"-  待办：{pending}",
     ]
     if skipped:
-        lines.append(f"- ⏭️ 已跳过：{skipped}")
+        lines.append(f"- 已跳过：{skipped}")
     lines += ["", f"共打卡 {len(profile.checkins)} 次", ""]
 
     return "\n".join(lines)

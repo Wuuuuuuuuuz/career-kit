@@ -216,7 +216,7 @@ def _attempt_login(p, channel: str, force_direct: bool) -> bool | None:
                 if not has_valid_cookies():
                     continue
                 if has_stoken:
-                    print(f"[login] ✓ 登录态已保存（{len(accumulated)} 条 cookies，"
+                    print(f"[login] OK 登录态已保存（{len(accumulated)} 条 cookies，"
                           "stoken 已捕获）。fetch_company_jobs(company=\"boss\") 现在可用。")
                 else:
                     print(f"[login] △ 登录态已保存（{len(accumulated)} 条 cookies），"

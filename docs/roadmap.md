@@ -8,8 +8,8 @@
 
 | Phase | 目标 | 状态 | 负责 |
 |-------|------|------|------|
-| Phase 1 | 框架基础设施 | ✅ 已完成 | 核心团队 |
-| Phase 2 | 职业教练系统 | ⬅️ 当前 | 核心团队 |
+| Phase 1 | 框架基础设施 |  已完成 | 核心团队 |
+| Phase 2 | 职业教练系统 |  当前 | 核心团队 |
 | Phase 3 | 社区贡献启动 | 待开始 | 社区 |
 | Phase 4 | 检索升级 | 待开始 | 核心团队 |
 | Phase 5 | 分析优化 | 待开始 | 核心团队 |
@@ -17,7 +17,7 @@
 
 ---
 
-## 2. Phase 1: 框架基础设施 ✅ 已完成
+## 2. Phase 1: 框架基础设施  已完成
 
 **目标**：让社区贡献 scraper 变得简单
 
@@ -37,7 +37,7 @@
 
 ---
 
-## 3. Phase 2: 职业教练系统 ⬅️ 当前
+## 3. Phase 2: 职业教练系统  当前
 
 **目标**：从信息查询工具升级为有真实数据的 AI 职业陪练
 
@@ -49,32 +49,32 @@
 
 ### 子阶段
 
-#### Phase 2.1: 数据模型扩展 ✅
+#### Phase 2.1: 数据模型扩展 
 
 - [x] 新增 `Task` 模型（id, name, deadline, status, priority）
 - [x] 新增 `CheckIn` 模型（task_id, timestamp, status, notes）
 - [x] 新增 `Adjustment` 模型（trigger, trigger_type, changes）
 - [x] 更新 `CareerProfile`，添加 tasks/checkins/adjustments 字段
 
-#### Phase 2.2: 任务管理 + 洞察引擎 ✅
+#### Phase 2.2: 任务管理 + 洞察引擎 
 
 - [x] `task_manager.py`：任务创建、打卡、调整
 - [x] `insight.py`：洞察检查、调整建议
 - [x] 实现三种触发方式（阶段审计、事件触发、主动检查）
 
-#### Phase 2.3: 产出物 ✅
+#### Phase 2.3: 产出物 
 
 - [x] `export_dashboard`：生成内嵌数据快照的自包含 HTML 仪表盘（阶段驱动：总进度+各阶段进度条+下一步任务+能力证据）
 - [x] 移除旧 mock 静态页 src/dashboard.html
 - [x] 日程表改为 LLM 对话中一次性产出 markdown/HTML，系统不存储日程
 
-#### Phase 2.4: MCP Tools 集成 ✅
+#### Phase 2.4: MCP Tools 集成 
 
 - [x] `generate_tasks` / `get_next_tasks` / `checkin_task`
 - [x] `get_progress` / `trigger_insight` / `apply_insight`
 - [x] `get_workflow_status`（含目标变更检测）/ `export_dashboard`
 
-#### Phase 2.5: 架构清理 ✅
+#### Phase 2.5: 架构清理 
 
 - [x] 下线旧签到系统（track_progress/save_checkin/view_progress）
 - [x] 删除 search_market 空转工具，新增 search_knowledge

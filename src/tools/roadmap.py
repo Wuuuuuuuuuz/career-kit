@@ -103,14 +103,8 @@ def format_roadmap(roadmap_data: dict[str, Any]) -> str:
     phases = roadmap.get("phases", [])
     for phase in phases:
         phase_type = phase.get("type", "")
-        type_icon = {
-            "learn": "📚",
-            "project": "🛠️",
-            "intern": "💼",
-            "research": "🔬",
-        }.get(phase_type, "📋")
 
-        lines.append(f"### {type_icon} {phase.get('name', '')} [{phase_type}]（{phase.get('id', '')}）")
+        lines.append(f"### {phase.get('name', '')} [{phase_type}]（{phase.get('id', '')}）")
         lines.append(f"**目标**：{phase.get('goal', '')}")
         lines.append("")
 
@@ -130,12 +124,12 @@ def format_roadmap(roadmap_data: dict[str, Any]) -> str:
             if jd:
                 if isinstance(jd, dict):
                     jd_parts = [f"{k}：{v}" for k, v in jd.items() if v]
-                    lines.append(f"📄 **JD 依据**：{'；'.join(jd_parts)[:300]}")
+                    lines.append(f" **JD 依据**：{'；'.join(jd_parts)[:300]}")
                 else:
-                    lines.append(f"📄 **JD 依据**：{str(jd)[:300]}")
+                    lines.append(f" **JD 依据**：{str(jd)[:300]}")
         elif jd_status == "pending_user_import":
             mark = "（已确认占位）" if confirmed else "（待用户确认）"
-            lines.append(f"⏳ **待导入真实 JD 后细化**{mark}——当前只有公司名，无岗位要求细节")
+            lines.append(f"**待导入真实 JD 后细化**{mark}——当前只有公司名，无岗位要求细节")
         lines.append("")
 
         kpi = phase.get("kpi", {})
@@ -158,12 +152,12 @@ def format_roadmap(roadmap_data: dict[str, Any]) -> str:
             lines.append(header)
 
             for t in ms.get("tasks", []):
-                priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t.get("priority", "medium"), "⚪")
+                priority_icon = {"high": "[高]", "medium": "[中]", "low": "[低]"}.get(t.get("priority", "medium"), "[中]")
                 desc = f"—{t['description']}" if t.get("description") else ""
                 lines.append(f"  - {priority_icon} {t.get('name', '')}{desc}")
 
             if ms.get("deliverable"):
-                lines.append(f"  📦 交付物：{ms['deliverable']}")
+                lines.append(f"   交付物：{ms['deliverable']}")
             lines.append("")
 
     return "\n".join(lines)

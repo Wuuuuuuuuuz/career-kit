@@ -194,7 +194,19 @@ def intake(section: str, data: str) -> str:
         return error_response(exc.code, exc.message, exc.details)
 
     profile = merge_section(section, data)
-    return f"已记录到「{section}」。当前档案版本：v{profile.version}"
+    result = f"已记录到「{section}」。当前档案版本：v{profile.version}"
+
+    # 毕业届引导（届别校验的数据基础）：who 未含 graduation_year 时提醒补充
+    if section == "who":
+        who = profile.who or {}
+        if not who.get("graduation_year") and not who.get("graduation"):
+            result += (
+                "\n\n毕业届提示：届别校验（路线图不排用户投不进的岗位）需要毕业年份。"
+                "若方便请补充：intake(section='who', data='{\"graduation_year\": \"2028\"}')（如 2028 届）。"
+                "不补充也不影响流程，届别校验会自动跳过。"
+            )
+
+    return result
 
 
 @mcp.tool()
@@ -234,7 +246,7 @@ def finalize_profile() -> str:
     probe_reminder = ""
     if skills and not has_evidence:
         probe_reminder = (
-            "\n\n⚠️ 摸排提醒：have 中的技能没有任何证据/置信度标注。\n"
+            "\n\n 摸排提醒：have 中的技能没有任何证据/置信度标注。\n"
             "在继续 analyze_gaps 之前，请先对关键技能逐项追问证据：\n"
             "  做过什么项目？现场讲一个难点？实际掌握到什么程度？\n"
             "然后把证据（evidence）与置信度（confidence）补充进 have 后再进入分析。\n"
@@ -245,7 +257,7 @@ def finalize_profile() -> str:
     goal_reminder = ""
     if not _has_goal(profile):
         goal_reminder = (
-            "\n\nℹ️ 目标缺失：档案中还没有明确的职业方向（want 只有模糊表述或为空）。\n"
+            "\n\n目标缺失：档案中还没有明确的职业方向（want 只有模糊表述或为空）。\n"
             "先调用 explore_goals 用三轴定位（能力×兴趣×真实市场数据）帮用户选定方向，"
             "再用 intake(section='want') 落定，然后才进入 analyze_gaps。"
         )
@@ -359,7 +371,7 @@ def import_jd_file(file_path: str) -> str:
         f"--- JD CONTENT ---\n{text}\n--- END ---\n\n"
         "根据以上 JD 内容，请调用 import_jd 工具导入，字段结构如下：\n"
         'import_jd(jd_text=\'{"company": "<公司名>", "role": "<岗位名>", "requirements": ["<要求1>", "<要求2>"]}\')\n'
-        "⚠️ 请用上面 JD 的真实内容填充字段（company/role/requirements/description 至少一项），"
+        " 请用上面 JD 的真实内容填充字段（company/role/requirements/description 至少一项），"
         "禁止原样复制示例占位文本。"
     )
 
@@ -385,10 +397,10 @@ def list_profiles() -> str:
     active = get_active_profile_name()
     lines = ["【职业档案列表】\n"]
     for p in profiles:
-        mark = "⭐ 当前使用" if p["is_active"] else "—"
+        mark = "[当前使用]" if p["is_active"] else "—"
         person = p.get("person") or "（未填身份）"
         target = p.get("target") or "（未设目标）"
-        has_plan = "✓ 有路线图" if p.get("has_plan") else ""
+        has_plan = "有路线图" if p.get("has_plan") else ""
         lines.append(
             f"- **{p['name']}** {mark}\n"
             f"  身份：{person}\n"
@@ -470,7 +482,7 @@ def delete_profile(profile_name: str, confirm: str = "") -> str:
     """
     if confirm != "true":
         return (
-            f"⚠️ 即将删除档案「{profile_name}」——这是不可逆的用户决策，"
+            f" 即将删除档案「{profile_name}」——这是不可逆的用户决策，"
             "请先与用户确认（展示该档案的身份/目标/更新时间），确认后重试：\n"
             'delete_profile(profile_name="<档案名>", confirm="true")\n\n'
             "说明：删除是回收站式的，档案会移入本地回收站（trash/），"
@@ -595,7 +607,7 @@ def explore_goals() -> str:
     if _has_goal(profile):
         want_summary = _summarize_dict(profile.want or {})
         return (
-            f"⚠️ 档案中已有目标：{want_summary}\n\n"
+            f" 档案中已有目标：{want_summary}\n\n"
             "如果用户只是想把现有规划继续推进，直接走 analyze_gaps 即可，无需 explore_goals。\n"
             "如果用户明确想换个方向（如'我之前选的不合适'），则继续本流程重新探索，"
             "选定后用 intake(section='want') 覆盖目标。\n"
@@ -819,13 +831,141 @@ def generate_roadmap() -> str:
     return _json({
         "methodology": ctx["methodology"],
         "profile": ctx["profile"],
+        "step_template": [
+            {
+                "step": 1,
+                "name": "起点判定",
+                "action": "用 roadmap.yaml 的 start_level_rubric 打分表逐维度评分（学历/实习/协作/技能/项目），"
+                          "加权求总分映射档位（大厂/中厂/小厂/暂不可入），输出各维度得分 + 判定依据",
+                "output": {"start_level": "档位", "dimension_scores": {"education": 0, "internship": 0, "collaboration": 0, "skill_depth": 0, "project_complexity": 0}, "rationale": "为什么是这个档位"},
+                "checkpoint": True,
+                "checkpoint_note": "把起点层级展示给用户确认后再进下一步",
+            },
+            {
+                "step": 2,
+                "name": "目标拆解",
+                "action": "从 want/target_jd 提取目标角色与目标公司层级，计算与 start_level 的跨度，得出过渡级数",
+                "output": {"target_role": "", "target_level": "大厂/中厂/小厂", "level_gap": 0, "transition_stages_needed": 0},
+                "checkpoint": False,
+            },
+            {
+                "step": 3,
+                "name": "阶段序列设计",
+                "action": "按起点→目标设计阶段序列（learn/project/intern/...），遵守层级连续铁律："
+                          "intern 目标层级 ≤ start_level+1，跨越必须插过渡阶段。每阶段标注类型/目标/对齐层级/过渡理由",
+                "output": {"phases_sequence": [{"type": "", "name": "", "target_level": "", "transition_reason": ""}]},
+                "checkpoint": True,
+                "checkpoint_note": "把阶段序列展示给用户确认后再逐阶段细化",
+            },
+            {
+                "step": 4,
+                "name": "逐阶段深入细化",
+                "action": "对每个阶段深入展开，不是列名式走过场：KPI（量化+验证证据）、里程碑（2-3 个带完成标准）、"
+                          "任务（一次坐下可完成粒度）、jd 三件套（company/rationale 常识可写，jd/jd_status 真实数据才填）",
+                "output": "完整 roadmap JSON（strategy_summary + phases，符合 roadmap.yaml output_schema）",
+                "checkpoint": False,
+            },
+            {
+                "step": 5,
+                "name": "审计",
+                "action": "调用 career-roadmap-auditor（独立审计角色）按 roadmap.yaml audit_checklist 逐项检查完整雏形，"
+                          "输出 PASS/FAIL + 修正项；FAIL 打回步骤 4 修正，重审 ≤2 轮；仍 FAIL 则明示未通过项请用户决定",
+                "output": {"verdict": "PASS/FAIL", "issues": [{"checklist_id": "", "problem": "", "fix": ""}]},
+                "checkpoint": False,
+            },
+            {
+                "step": 6,
+                "name": "定稿交付",
+                "action": "一次性展示全流程雏形（所有阶段/目标/KPI/里程碑/顺序理由），用户确认后调用 save_roadmap(roadmap_json)",
+                "output": "save_roadmap(roadmap_json)",
+                "checkpoint": True,
+                "checkpoint_note": "用户确认整份路线图后才定稿保存",
+            },
+        ],
         "instructions": (
-            "请按照路线图方法论指引：\n"
-            "1. 基于已保存的差距分析（gap）和之前搜索的真实 JD 数据\n"
-            "2. 设计分阶段路线图，每个任务标注来源依据\n"
-            "3. 调用 save_roadmap(roadmap_json) 保存结构化结果"
+            "请严格按照 step_template 的 6 步分步执行，禁止一步到位。\n"
+            "1. 每步必须产出该步的 output 结构后再进入下一步\n"
+            "2. checkpoint=true 的步骤必须先把中间产物展示给用户确认，确认后再继续\n"
+            "3. 步骤 1 用 roadmap.yaml 的 start_level_rubric 打分表判定，不是直觉\n"
+            "4. 步骤 5 必须调用 career-roadmap-auditor 审计，审计通过才算定稿候选\n"
+            "5. 过程中需要真实岗位数据时用 fetch_company_jobs / fetch_jd_detail 获取，"
+            "拿不到就 jd 占位（pending_user_import），绝不编造\n"
+            "6. 最终调用 save_roadmap(roadmap_json) 保存"
         ),
     })
+
+
+_LEVEL_ORDER = {"暂不可入": 0, "小厂": 1, "中厂": 2, "大厂": 3}
+
+
+def _level_rank(level: str) -> int:
+    """企业层级档位转数值，用于层级连续校验。未知档位返回 -1（跳过校验）。"""
+    return _LEVEL_ORDER.get(level, -1)
+
+
+def _check_roadmap_hard(parsed: dict, profile) -> list[str]:
+    """save_roadmap 硬校验：有数据才挡，无数据放行。
+
+    检查：起点对齐 / 层级连续 / 届别匹配 / 必填字段。
+    返回问题列表（空 = 通过）。只收集问题，由 save_roadmap 决定是否拒绝。
+    """
+    issues: list[str] = []
+    roadmap = parsed.get("roadmap", parsed)
+    phases = roadmap.get("phases", [])
+
+    # 起点层级：优先从本次路线图自带的 start_level，否则从 gap 读
+    start_level = roadmap.get("start_level", "") or (profile.gap or {}).get("start_level", "")
+    start_rank = _level_rank(start_level)
+
+    # 必填字段检查（learn 外的阶段必须有 resume_value；每阶段 KPI 必须有 metric+target）
+    for phase in phases:
+        phase_type = phase.get("type", "learn")
+        name = phase.get("name", phase.get("id", "?"))
+        if phase_type != "learn" and not phase.get("resume_value"):
+            issues.append(f"阶段「{name}」类型为 {phase_type}，必须有 resume_value（如何写到简历上）")
+        kpi = phase.get("kpi") or {}
+        if isinstance(kpi, dict) and not (kpi.get("metric") and kpi.get("target")):
+            issues.append(f"阶段「{name}」的 KPI 缺少量化指标（metric）或目标值（target）——不能是'学会'这种模糊表述")
+
+    # 层级连续：intern 阶段 target_level ≤ start_level+1（start_level 未知时跳过）
+    if start_rank >= 0:
+        for phase in phases:
+            phase_type = phase.get("type", "learn")
+            if phase_type != "intern":
+                continue
+            target_level = phase.get("target_level", "")
+            target_rank = _level_rank(target_level)
+            if target_rank < 0:
+                continue
+            name = phase.get("name", phase.get("id", "?"))
+            if target_rank > start_rank + 1:
+                issues.append(
+                    f"阶段「{name}」目标层级「{target_level}」超出起点「{start_level}」+1 的连续范围——"
+                    "跨越层级必须插入过渡阶段（先进可进入的中小厂攒经历）"
+                )
+            elif target_rank > start_rank:
+                issues.append(
+                    f"阶段「{name}」目标层级「{target_level}」高于起点「{start_level}」——"
+                    "请确认这是有过渡铺垫的合理进阶，而非直接跳级"
+                )
+
+    # 届别匹配：阶段 graduation_year（面向届）与用户毕业届比对
+    graduation_year = (profile.who or {}).get("graduation_year", "")
+    for phase in phases:
+        target_year = phase.get("graduation_year", "")
+        if not graduation_year or not target_year:
+            continue
+        name = phase.get("name", phase.get("id", "?"))
+        try:
+            if int(target_year) < int(graduation_year):
+                issues.append(
+                    f"阶段「{name}」面向届 {target_year} 早于用户毕业届 {graduation_year}——"
+                    "用户投不进的届别岗位不应排在路线图里"
+                )
+        except (TypeError, ValueError):
+            continue
+
+    return issues
 
 
 @mcp.tool()
@@ -926,6 +1066,9 @@ def save_roadmap(roadmap_json: str) -> str:
                 "请向用户确认「先占位后补 JD」；确认后把 confirmed 置 true 再保存可消除本提示"
             )
 
+    # 硬校验：有数据才挡，无数据放行（起点对齐/层级连续/届别匹配/必填字段）
+    hard_issues = _check_roadmap_hard(parsed, profile)
+
     # 定稿即交付：自动生成路线图活地图 HTML（随时可重新生成）
     map_path = ""
     try:
@@ -936,11 +1079,19 @@ def save_roadmap(roadmap_json: str) -> str:
 
     warnings_text = ""
     if warnings_list:
-        warnings_text = "\n\n⚠️ 依据待确认：\n" + "\n".join(f"- {w}" for w in warnings_list)
+        warnings_text = "\n\n 依据待确认：\n" + "\n".join(f"- {w}" for w in warnings_list)
+
+    hard_text = ""
+    if hard_issues:
+        hard_text = (
+            "\n\n 质量硬校验（起点/层级/届别/必填）需修复：\n"
+            + "\n".join(f"- {i}" for i in hard_issues)
+            + "\n（已保存，但建议用 career-roadmap-auditor 审计并按修正项迭代后再定稿）"
+        )
 
     return _json({
         "message": (
-            f"路线图已保存。\n\n{report}{warnings_text}\n\n"
+            f"路线图已保存。\n\n{report}{hard_text}{warnings_text}\n\n"
             f"路线图 HTML 已生成：{map_path}（双击即看，可随时用 export_dashboard(mode=\"roadmap\") 重新生成）\n\n"
             "接下来可以调用 generate_tasks 生成任务列表开始执行。"
         ),
@@ -949,6 +1100,7 @@ def save_roadmap(roadmap_json: str) -> str:
             "phase": "roadmap_saved",
             "version": profile.version,
             "jd_warnings": warnings_list,
+            "hard_issues": hard_issues,
         },
     })
 
@@ -1169,7 +1321,7 @@ async def fetch_company_jobs(company: str, params: str = "{}") -> str:
 
     if warnings_list:
         lines.append("---")
-        lines.append("⚠️ 部分数据获取失败：")
+        lines.append(" 部分数据获取失败：")
         for w in warnings_list:
             lines.append(f"   - {w}")
         lines.append("")
@@ -1328,23 +1480,23 @@ def get_next_tasks() -> str:
             )
             total = len(phase_tasks)
             pct = int(done / total * 100) if total else 0
-            marker = "⬅ 当前" if view and view["phase_id"] == phase_id else ("✓" if done == total else "·")
+            marker = "[当前]" if view and view["phase_id"] == phase_id else ("" if done == total else "·")
             overview.append(f"{marker} {phase.get('name', phase_id)}（{done}/{total}，{pct}%）")
-        lines.append("## 🗺️ 全流程")
+        lines.append("## 全流程")
         lines.append("\n".join(f"  {o}" for o in overview))
         lines.append("")
 
     if view is None:
-        lines.append("🎉 所有阶段已完成！建议回顾目标，规划下一步方向。")
+        lines.append("所有阶段已完成！建议回顾目标，规划下一步方向。")
         next_step = "trigger_insight(event)"
     else:
         pct = int(view["done"] / view["total"] * 100) if view["total"] else 0
-        lines.append(f"## 🎯 当前阶段：{view['phase_name']}（{view['done']}/{view['total']}，{pct}%）")
+        lines.append(f"## 当前阶段：{view['phase_name']}（{view['done']}/{view['total']}，{pct}%）")
         lines.append("")
         lines.append("### 接下来做")
         for t in view["next_tasks"]:
-            icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t.priority, "⚪")
-            status_mark = "🔵" if t.status == "in_progress" else icon
+            icon = {"high": "[高]", "medium": "[中]", "low": "[低]"}.get(t.priority, "[中]")
+            status_mark = "[进行中]" if t.status == "in_progress" else icon
             desc = f"—{t.description}" if t.description else ""
             lines.append(f"- {status_mark} **{t.name}** (ID: {t.id}){desc}")
         lines.append("")
@@ -1398,19 +1550,19 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
     _phase_names = {p.get("id"): p.get("name", p.get("id")) for p in _roadmap_phases}
 
     lines = []
-    lines.append(f"✅ 已打卡：{task.name if task else task_id}")
+    lines.append(f" 已打卡：{task.name if task else task_id}")
     if status == "skipped":
-        lines[0] = f"⏭️ 已跳过：{task.name if task else task_id}"
+        lines[0] = f"已跳过：{task.name if task else task_id}"
     lines.append("")
 
     if newly_completed:
         _name = _phase_names.get(newly_completed[0], newly_completed[0])
-        lines.append(f"🎯 恭喜！你完成了阶段「{_name}」的全部任务。")
+        lines.append(f"恭喜！你完成了阶段「{_name}」的全部任务。")
         lines.append("建议调用 trigger_insight(trigger_type=\"stage_audit\") 进行阶段审计。")
         lines.append("")
 
     if status == "completed" and task:
-        lines.append("💡 如果完成得轻松，可以考虑加深难度或直接推进下一项——由你和用户在对话中决定。")
+        lines.append("如果完成得轻松，可以考虑加深难度或直接推进下一项——由你和用户在对话中决定。")
 
     save_profile(profile)
 
@@ -1567,7 +1719,7 @@ def get_progress() -> str:
 
     # 调整历史
     if profile.adjustments:
-        lines.append("## 📝 调整历史")
+        lines.append("## 调整历史")
         for adj in profile.adjustments[-5:]:
             lines.append(f"- {adj.timestamp[:10]}：{adj.reason}")
         lines.append("")
@@ -1597,7 +1749,7 @@ def get_workflow_status() -> str:
         want_at = profile.section_updated_at.get("want", "")
         if want_at and want_at > plan_saved_at:
             goal_change_alert = (
-                "⚠️ 检测到用户目标（want）在路线图生成之后发生了变更。\n"
+                " 检测到用户目标（want）在路线图生成之后发生了变更。\n"
                 "旧路线图可能已不适用，建议重新调用 analyze_gaps 进行分析。\n\n"
             )
         else:
@@ -1605,7 +1757,7 @@ def get_workflow_status() -> str:
             if jd_at and jd_at > plan_saved_at and profile.target_jd:
                 jd_summary = _summarize_dict(profile.target_jd)
                 goal_change_alert = (
-                    f"ℹ️ 检测到 target_jd 在路线图之后更新（{jd_summary}）。\n"
+                    f"检测到 target_jd 在路线图之后更新（{jd_summary}）。\n"
                     "若这是真实的新目标 JD，建议重新 analyze_gaps；\n"
                     "若为误导入（如示例文本），可忽略本提示，或请 LLM 用 import_jd 覆盖为真实 JD。\n\n"
                 )
@@ -1681,7 +1833,7 @@ def get_workflow_status() -> str:
     lines.append("")
     lines.append("### 已完成步骤")
     for step in completed_steps:
-        lines.append(f"- ✅ {step}")
+        lines.append(f"-  {step}")
     lines.append("")
     lines.append("### 任务统计")
     lines.append(f"- 总计：{total_tasks} 个")
@@ -1690,7 +1842,7 @@ def get_workflow_status() -> str:
     lines.append("### 工作流指南")
     lines.append("- 建档：start_session → intake(who/have/want) → finalize_profile；无目标用 explore_goals 选方向")
     lines.append("- 分析：explore_goals（无目标时）→ analyze_gaps → save_gap_analysis")
-    lines.append("- 规划：generate_roadmap → save_roadmap → generate_tasks")
+    lines.append("- 规划：generate_roadmap（按 step_template 分步：起点判定→目标拆解→阶段序列→逐阶段细化→审计→定稿）→ save_roadmap → generate_tasks")
     lines.append("- 执行：get_next_tasks → checkin_task → trigger_insight(stage_audit/event) → apply_insight")
     lines.append("- 产出：export_dashboard 生成阶段进度仪表盘")
     lines.append("")
@@ -1769,7 +1921,7 @@ def _render_progress_html(profile) -> str:
         phase_tasks = [t for t in profile.tasks if t.phase_id == phase_id]
         done = sum(1 for t in phase_tasks if t.status in finished_status)
         pct = int(done / len(phase_tasks) * 100) if phase_tasks else 0
-        audited = "✓ 已审计" if phase_id in profile.audited_phases else ""
+        audited = "已审计" if phase_id in profile.audited_phases else ""
         phases_html += (
             f'<div class="phase"><div class="phase-head"><span>{phase.get("name", phase_id)}</span>'
             f'<span>{done}/{len(phase_tasks)}{audited}</span></div>'
@@ -1860,8 +2012,6 @@ def _render_roadmap_map(profile) -> str:
     phases = roadmap.get("phases", []) if isinstance(roadmap, dict) else []
     strategy = roadmap.get("strategy_summary", "")
 
-    type_icons = {"learn": "📚", "project": "🛠️", "intern": "💼", "research": "🔬"}
-
     phase_cards = ""
     for idx, phase in enumerate(phases):
         phase_id = phase.get("id") or f"phase_{idx + 1}"
@@ -1871,23 +2021,22 @@ def _render_roadmap_map(profile) -> str:
         pct = int(done / total * 100) if total else 0
         is_current = bool(profile.tasks) and phase_id == profile.tasks[0].phase_id
 
-        icon = type_icons.get(phase.get("type", ""), "📋")
-        current_mark = " ⬅ 当前" if is_current else ""
+        current_mark = " [当前]" if is_current else ""
 
         # 依据/占位徽标
         jd_status = phase.get("jd_status", "not_required")
         confirmed = phase.get("confirmed", False)
         if jd_status == "has_jd":
-            badge = '<span class="badge ok">📄 有 JD 依据</span>'
+            badge = '<span class="badge ok">有 JD 依据</span>'
         elif jd_status == "pending_user_import":
-            badge = '<span class="badge warn">⏳ 待导入真实 JD' + ("（已确认）" if confirmed else "（待确认）") + '</span>'
+            badge = '<span class="badge warn">待导入真实 JD' + ("（已确认）" if confirmed else "（待确认）") + '</span>'
         else:
             badge = '<span class="badge">免 JD</span>'
 
         company_line = ""
         if phase.get("company"):
             rationale = phase.get("rationale", "")
-            company_line = f'<p class="company">🏢 {phase.get("company")}' + (
+            company_line = f'<p class="company">{phase.get("company")}' + (
                 f' <span class="meta">— {rationale}</span>' if rationale else ""
             ) + "</p>"
 
@@ -1898,7 +2047,7 @@ def _render_roadmap_map(profile) -> str:
                 jd_text = "；".join(f"{k}：{v}" for k, v in jd.items() if v)
             else:
                 jd_text = str(jd)
-            jd_line = f'<p class="jd">📄 {jd_text[:400]}</p>'
+            jd_line = f'<p class="jd">{jd_text[:400]}</p>'
 
         kpi = phase.get("kpi", {}) or {}
         kpi_line = ""
@@ -1909,7 +2058,7 @@ def _render_roadmap_map(profile) -> str:
 
         resume_line = ""
         if phase.get("resume_value"):
-            resume_line = f'<p class="resume">📝 简历价值：{phase.get("resume_value")}</p>'
+            resume_line = f'<p class="resume">简历价值：{phase.get("resume_value")}</p>'
 
         ms_html = ""
         for ms in phase.get("milestones", []):
@@ -1931,7 +2080,7 @@ def _render_roadmap_map(profile) -> str:
         phase_cards += f"""
 <div class="card phase{'' if not is_current else ' current'}">
   <div class="phase-head">
-    <span>{icon} {phase.get('name', phase_id)} [{phase.get('type', '')}]{current_mark} {badge}</span>
+    <span>{phase.get('name', phase_id)} [{phase.get('type', '')}]{current_mark} {badge}</span>
     <span>{done}/{total} · {pct}%</span>
   </div>
   <div class="bar"><div class="fill" style="width:{pct}%"></div></div>
@@ -1983,7 +2132,7 @@ small, .meta {{ color: #999; font-size: 12px; }}
 
 {phase_cards or '<p>尚未生成路线图。</p>'}
 
-<p class="meta">顺序归产品，时间归用户。⏳ 待导入 JD 的阶段在拿到真实 JD 后会自动触发细化。</p>
+<p class="meta">顺序归产品，时间归用户。待导入 JD 的阶段在拿到真实 JD 后会自动触发细化。</p>
 </body></html>"""
 
 

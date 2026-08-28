@@ -11,8 +11,10 @@ data/cache/
 .career-kit/
 .claude/*
 !.claude/commands/
+!.claude/agents/
 .opencode/*
 !.opencode/commands/
+!.opencode/agent/
 .mcp.json
 CLAUDE.md
 AGENTS.md
