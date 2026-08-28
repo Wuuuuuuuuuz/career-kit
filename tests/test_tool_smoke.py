@@ -357,9 +357,17 @@ def test_export_dashboard_roadmap_map(temp_profile):
     assert "某公司" in html and "对双非友好" in html      # 公司名 + 推荐理由
     assert "待导入真实 JD" in html                        # 占位徽标
     assert "起点层级" in html and "中厂" in html           # start_level 展示
-    assert "1/2" in html and "%" in html                   # 执行进度
+    assert "career-data" in html                          # 数据 JSON 嵌入
     assert "[当前]" in html                                # 当前阶段高亮
     assert "免 JD" in html                                 # learn 阶段徽标
+    assert "export-btn" in html and "reset-btn" in html    # 可交互打卡按钮
+    assert "localStorage" in html                          # 本地持久化
+    assert 'type="checkbox"' in html                       # 任务勾选打卡
+    # 服务端进度数据：phase_2 完成 1/2 正确嵌入数据 JSON
+    import json as _json
+    m = _json.loads(html.split('id="career-data">')[1].split('</script>')[0])
+    p2 = next(p for p in m["phases"] if p["id"] == "phase_2")
+    assert p2["done"] == 1 and p2["total"] == 2
 
 
 def test_explore_goals_returns_methodology(temp_profile):

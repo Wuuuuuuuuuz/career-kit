@@ -1873,8 +1873,10 @@ def export_dashboard(mode: str = "progress") -> str:
         out_path = _write_html(html, "career_kit_roadmap.html")
         return (
             f"职业地图已生成：{out_path}\n\n"
-            "用浏览器打开即可查看。包含完整路线图、每阶段执行进度、JD 依据与占位状态。\n"
-            "进度更新后重新调用本工具即可刷新（永远是最新的地图）。"
+            "用浏览器打开即可查看。这是一个可交互打卡应用：\n"
+            "- 勾选任务即打卡，进度实时更新，状态保存在浏览器（localStorage）\n"
+            "- 顶部 tab 切换阶段；「导出打卡数据」可复制打卡指令回传，由你同步到档案\n"
+            "重新生成时已打卡记录不会丢失。"
         )
 
     if mode != "progress":
@@ -2002,137 +2004,399 @@ ul {{ padding-left: 20px; }} li {{ margin: 4px 0; font-size: 14px; }}
 
 
 def _render_roadmap_map(profile) -> str:
-    """渲染「职业地图」HTML（mode="roadmap"）：完整路线图 + 每阶段执行进度 + 依据/占位徽标。
+    """渲染「职业地图」HTML（mode="roadmap"）：完整路线图 + 可交互打卡。
 
-    执行中随时重新生成——永远是「我在哪、计划是什么、什么待补」的最新地图。
+    自包含单文件：双击打开即用，无服务器依赖。
+    - 任务勾选打卡：点击 checkbox 标记完成/取消，状态持久化到浏览器 localStorage
+    - 进度实时更新：阶段/总进度条随勾选联动
+    - 阶段导航：顶部 tab 点击切换当前查看的阶段
+    - 导出打卡数据：一键复制 JSON，粘贴回对话让 LLM 用 checkin_task 同步到档案
+    重新生成时保留已打卡记录（localStorage 按档案名隔离）。
     """
+    import json as _json_lib
+
     finished_status = ("completed", "skipped")
 
     roadmap = profile.plan.get("roadmap", profile.plan)
     phases = roadmap.get("phases", []) if isinstance(roadmap, dict) else []
     strategy = roadmap.get("strategy_summary", "")
 
-    phase_cards = ""
+    # 组装结构化数据（前端渲染 + localStorage 打卡）
+    data = {
+        "profile": get_active_profile_name(),
+        "start_level": (profile.gap or {}).get("start_level", ""),
+        "strategy": strategy,
+        "phases": [],
+    }
     for idx, phase in enumerate(phases):
         phase_id = phase.get("id") or f"phase_{idx + 1}"
         phase_tasks = [t for t in profile.tasks if t.phase_id == phase_id]
         done = sum(1 for t in phase_tasks if t.status in finished_status)
         total = len(phase_tasks)
-        pct = int(done / total * 100) if total else 0
         is_current = bool(profile.tasks) and phase_id == profile.tasks[0].phase_id
 
-        current_mark = " [当前]" if is_current else ""
-
-        # 依据/占位徽标
         jd_status = phase.get("jd_status", "not_required")
         confirmed = phase.get("confirmed", False)
         if jd_status == "has_jd":
-            badge = '<span class="badge ok">有 JD 依据</span>'
+            badge = "有 JD 依据"
+            badge_cls = "ok"
         elif jd_status == "pending_user_import":
-            badge = '<span class="badge warn">待导入真实 JD' + ("（已确认）" if confirmed else "（待确认）") + '</span>'
+            badge = "待导入真实 JD" + ("（已确认）" if confirmed else "（待确认）")
+            badge_cls = "warn"
         else:
-            badge = '<span class="badge">免 JD</span>'
+            badge = "免 JD"
+            badge_cls = ""
 
-        company_line = ""
-        if phase.get("company"):
-            rationale = phase.get("rationale", "")
-            company_line = f'<p class="company">{phase.get("company")}' + (
-                f' <span class="meta">— {rationale}</span>' if rationale else ""
-            ) + "</p>"
-
-        jd_line = ""
-        if jd_status == "has_jd" and phase.get("jd"):
-            jd = phase["jd"]
+        jd = phase.get("jd")
+        jd_text = ""
+        if jd_status == "has_jd" and jd:
             if isinstance(jd, dict):
                 jd_text = "；".join(f"{k}：{v}" for k, v in jd.items() if v)
             else:
                 jd_text = str(jd)
-            jd_line = f'<p class="jd">{jd_text[:400]}</p>'
 
         kpi = phase.get("kpi", {}) or {}
-        kpi_line = ""
-        if isinstance(kpi, dict) and kpi.get("metric"):
-            kpi_line = f'<p class="goal">KPI：{kpi.get("metric")} → {kpi.get("target", "?")}' + (
-                f'（验证：{kpi.get("evidence")}）' if kpi.get("evidence") else ""
-            ) + "</p>"
-
-        resume_line = ""
-        if phase.get("resume_value"):
-            resume_line = f'<p class="resume">简历价值：{phase.get("resume_value")}</p>'
-
-        ms_html = ""
+        tasks = []
+        for t in phase_tasks:
+            tasks.append({
+                "id": t.id,
+                "name": t.name,
+                "desc": t.description,
+                "status": t.status,
+                "priority": t.priority,
+                "milestone_id": t.milestone_id,
+            })
+        # 里程碑里的任务定义（未生成 task 时前端也能展示）
+        milestone_tasks = []
         for ms in phase.get("milestones", []):
-            ms_html += f'<div class="ms"><b>{ms.get("name", "")}</b>'
-            if ms.get("done_criteria"):
-                ms_html += f' <span class="meta">完成标准：{ms.get("done_criteria")}</span>'
-            if ms.get("deliverable"):
-                ms_html += f' <span class="meta">交付物：{ms.get("deliverable")}</span>'
-            tasks = "".join(
-                f"<li>{t.get('name', '')}"
-                + (f" <span class='meta'>—{t.get('description')}</span>" if t.get("description") else "")
-                + "</li>"
-                for t in ms.get("tasks", [])
-            )
-            if tasks:
-                ms_html += f"<ul>{tasks}</ul>"
-            ms_html += "</div>"
+            for t in ms.get("tasks", []):
+                milestone_tasks.append({
+                    "name": t.get("name", ""),
+                    "desc": t.get("description", ""),
+                    "priority": t.get("priority", "medium"),
+                })
 
-        phase_cards += f"""
-<div class="card phase{'' if not is_current else ' current'}">
-  <div class="phase-head">
-    <span>{phase.get('name', phase_id)} [{phase.get('type', '')}]{current_mark} {badge}</span>
-    <span>{done}/{total} · {pct}%</span>
-  </div>
-  <div class="bar"><div class="fill" style="width:{pct}%"></div></div>
-  {company_line}
-  <p class="goal">{phase.get('goal', '')}</p>
-  {kpi_line}
-  {resume_line}
-  {jd_line}
-  {ms_html}
-</div>"""
+        data["phases"].append({
+            "id": phase_id,
+            "name": phase.get("name", phase_id),
+            "type": phase.get("type", "learn"),
+            "goal": phase.get("goal", ""),
+            "company": phase.get("company", ""),
+            "rationale": phase.get("rationale", ""),
+            "badge": badge,
+            "badge_cls": badge_cls,
+            "kpi_metric": kpi.get("metric", "") if isinstance(kpi, dict) else "",
+            "kpi_target": kpi.get("target", "") if isinstance(kpi, dict) else "",
+            "kpi_evidence": kpi.get("evidence", "") if isinstance(kpi, dict) else "",
+            "resume_value": phase.get("resume_value", ""),
+            "jd_text": jd_text,
+            "done": done,
+            "total": total,
+            "is_current": is_current,
+            "tasks": tasks,
+            "milestone_tasks": milestone_tasks,
+        })
 
-    start_level = (profile.gap or {}).get("start_level", "")
-    start_line = (
-        f'<p class="goal">起点层级：<b>{start_level}</b>（差距分析产出，路线图按此对齐）</p>'
-        if start_level else ""
-    )
+    data_json = _json_lib.dumps(data, ensure_ascii=False)
 
     return f"""<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Career Kit 职业地图</title>
 <style>
+:root {{
+  --bg: #f6f7fb; --card: #ffffff; --ink: #1f2430; --muted: #8a93a6;
+  --line: #e6e9f0; --brand: #4a6cf7; --brand-soft: #eef1fe;
+  --ok: #22a06b; --ok-soft: #e8f7f0; --warn: #b26a00; --warn-soft: #fff4e0;
+  --radius: 14px; --shadow: 0 1px 3px rgba(31,36,48,.06), 0 4px 16px rgba(31,36,48,.05);
+}}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{ font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-       max-width: 860px; margin: 0 auto; padding: 24px; color: #222; background: #fafafa; }}
-h1 {{ font-size: 22px; }} h2 {{ font-size: 17px; border-bottom: 2px solid #4a90d9; padding-bottom: 4px; }}
-.card {{ background: #fff; border: 1px solid #e3e3e3; border-radius: 10px; padding: 16px; margin-bottom: 14px; }}
-.card.current {{ border-left: 4px solid #4a90d9; background: #f5f9ff; }}
-.bar {{ background: #eee; border-radius: 6px; height: 10px; overflow: hidden; margin: 6px 0; }}
-.fill {{ background: linear-gradient(90deg,#4a90d9,#67b26f); height: 100%; }}
-.phase-head {{ display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 2px; }}
-.company {{ margin: 6px 0 2px; font-size: 13px; }}
-.goal, .resume, .jd {{ color: #555; font-size: 13px; margin: 3px 0; }}
-.resume {{ color: #2e7d32; }} .jd {{ color: #455a64; background: #f4f7f8; padding: 4px 8px; border-radius: 4px; }}
+       background: var(--bg); color: var(--ink); line-height: 1.6; }}
+.wrap {{ max-width: 980px; margin: 0 auto; padding: 28px 20px 60px; }}
+header {{ display: flex; align-items: flex-end; justify-content: space-between;
+          gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }}
+h1 {{ font-size: 24px; letter-spacing: .3px; }}
+.meta {{ color: var(--muted); font-size: 12.5px; }}
+.start {{ margin: 6px 0 18px; color: var(--muted); font-size: 13.5px; }}
+.start b {{ color: var(--brand); }}
+.strategy {{ background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+             padding: 14px 16px; margin: 12px 0 22px; color: #4a5160; font-size: 14px;
+             box-shadow: var(--shadow); }}
+/* 总进度 */
+.overview {{ display: flex; gap: 18px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }}
+.ring {{ --p: 0; width: 74px; height: 74px; border-radius: 50%;
+         background: conic-gradient(var(--brand) calc(var(--p)*1%), #e6e9f0 0);
+         display: grid; place-items: center; }}
+.ring div {{ width: 58px; height: 58px; border-radius: 50%; background: var(--card);
+             display: grid; place-items: center; font-weight: 700; font-size: 15px; color: var(--brand); }}
+.overview-txt {{ font-size: 13.5px; color: var(--muted); }}
+.overview-txt b {{ color: var(--ink); font-size: 15px; }}
+/* 阶段导航 */
+.tabs {{ display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 16px; }}
+.tab {{ padding: 8px 16px; border: 1px solid var(--line); background: var(--card);
+        border-radius: 999px; font-size: 13.5px; cursor: pointer; color: var(--muted);
+        transition: all .15s; }}
+.tab:hover {{ border-color: var(--brand); color: var(--brand); }}
+.tab.active {{ background: var(--brand); border-color: var(--brand); color: #fff; }}
+.tab .tab-pct {{ margin-left: 6px; font-size: 12px; opacity: .8; }}
+/* 阶段卡片 */
+.card {{ background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+         padding: 20px 22px; margin-bottom: 16px; box-shadow: var(--shadow);
+         display: none; }}
+.card.active {{ display: block; }}
+.card-head {{ display: flex; justify-content: space-between; align-items: flex-start;
+              gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }}
+.card-title {{ font-size: 17px; font-weight: 700; }}
+.type-pill {{ font-size: 11.5px; color: var(--muted); border: 1px solid var(--line);
+             border-radius: 6px; padding: 1px 7px; margin-left: 8px; vertical-align: 2px; }}
 .badge {{ display: inline-block; font-size: 11px; color: #666; background: #eee;
           border-radius: 8px; padding: 1px 7px; margin-left: 4px; }}
-.badge.ok {{ color: #2e7d32; background: #e6f4ea; }}
-.badge.warn {{ color: #b26a00; background: #fff4e0; }}
-.ms {{ margin: 8px 0 0; font-size: 13px; }}
-ul {{ padding-left: 20px; margin: 4px 0; }} li {{ margin: 2px 0; font-size: 13px; }}
-small, .meta {{ color: #999; font-size: 12px; }}
+.badge.ok {{ color: var(--ok); background: var(--ok-soft); }}
+.badge.warn {{ color: var(--warn); background: var(--warn-soft); }}
+.cur-tag {{ color: var(--brand); font-size: 12px; margin-left: 8px; }}
+.bar {{ background: #eef0f6; border-radius: 999px; height: 8px; overflow: hidden; margin: 10px 0 14px; }}
+.fill {{ background: linear-gradient(90deg, var(--brand), #6f8bff); height: 100%; width: 0; transition: width .3s; }}
+.done-txt {{ color: var(--muted); font-size: 12.5px; }}
+.goal {{ color: #4a5160; font-size: 13.5px; margin: 6px 0; }}
+.kpi {{ color: #5a6270; font-size: 13px; margin: 2px 0; }}
+.resume {{ color: var(--ok); font-size: 13px; margin: 2px 0; }}
+.jd {{ color: #455a64; background: #f4f7f8; padding: 8px 12px; border-radius: 8px;
+      font-size: 12.5px; margin: 8px 0; }}
+.company {{ margin: 6px 0 2px; font-size: 13px; font-weight: 600; }}
+/* 任务列表 */
+.tasks {{ margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 6px; }}
+.task {{ display: flex; align-items: flex-start; gap: 10px; padding: 9px 4px;
+         border-radius: 8px; cursor: pointer; }}
+.task:hover {{ background: var(--brand-soft); }}
+.task input {{ width: 18px; height: 18px; margin-top: 2px; accent-color: var(--brand); cursor: pointer; }}
+.task-name {{ flex: 1; font-size: 13.5px; }}
+.task-name.done {{ text-decoration: line-through; color: var(--muted); }}
+.task-meta {{ color: var(--muted); font-size: 12px; }}
+.ms {{ font-size: 12px; color: var(--muted); margin-top: 8px; font-weight: 600; }}
+.pr {{ display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }}
+.pr-high {{ background: #e5484d; }} .pr-medium {{ background: #f5a524; }} .pr-low {{ background: #22a06b; }}
+.empty {{ color: var(--muted); font-size: 13px; padding: 8px 0; }}
+/* 底部操作 */
+.actions {{ position: sticky; bottom: 16px; display: flex; gap: 10px; justify-content: flex-end;
+            margin-top: 18px; }}
+.btn {{ padding: 9px 16px; border-radius: 10px; border: 1px solid var(--line);
+        background: var(--card); font-size: 13px; cursor: pointer; color: var(--ink); }}
+.btn.primary {{ background: var(--brand); border-color: var(--brand); color: #fff; }}
+.btn:hover {{ opacity: .9; }}
+.footer {{ text-align: center; color: var(--muted); font-size: 12px; margin-top: 30px; }}
+.toast {{ position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%);
+         background: #1f2430; color: #fff; padding: 9px 18px; border-radius: 10px;
+         font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s; }}
+.toast.show {{ opacity: 1; }}
+@media (max-width: 640px) {{ .wrap {{ padding: 16px 12px 60px; }} }}
 </style>
 </head>
 <body>
-<h1>Career Kit 职业地图 <span class="meta">生成于 {datetime.now().strftime("%Y-%m-%d %H:%M")} · 路线图 v{profile.version}</span></h1>
+<div class="wrap">
+  <header>
+    <h1>Career Kit 职业地图</h1>
+    <span class="meta">生成于 {datetime.now().strftime("%Y-%m-%d %H:%M")} · 路线图 v{profile.version}</span>
+  </header>
 
-{start_line}
-<p class="meta">{strategy}</p>
+  <p class="start">起点层级：<b id="start-level">—</b>（差距分析产出，路线图按此对齐）</p>
 
-{phase_cards or '<p>尚未生成路线图。</p>'}
+  <div class="strategy" id="strategy">—</div>
 
-<p class="meta">顺序归产品，时间归用户。待导入 JD 的阶段在拿到真实 JD 后会自动触发细化。</p>
+  <div class="overview">
+    <div class="ring" id="ring"><div id="ring-pct">0%</div></div>
+    <div class="overview-txt">
+      <div>总进度：<b id="total-pct">0%</b></div>
+      <div id="total-done">已完成 0 / 0 个任务</div>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div id="cards"></div>
+
+  <div class="actions">
+    <button class="btn" id="export-btn">导出打卡数据</button>
+    <button class="btn" id="reset-btn">重置本地打卡</button>
+  </div>
+
+  <p class="footer">顺序归产品，时间归用户。勾选任务即本地打卡（浏览器保存）；点「导出打卡数据」把打卡结果粘贴回对话，即可同步到档案。</p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script type="application/json" id="career-data">{data_json}</script>
+<script>
+(function () {{
+  'use strict';
+  var DATA = JSON.parse(document.getElementById('career-data').textContent);
+  var KEY = 'career-kit-checkins-' + DATA.profile;
+
+  function loadCheckins() {{
+    try {{ return JSON.parse(localStorage.getItem(KEY) || '{{}}'); }}
+    catch (e) {{ return {{}}; }}
+  }}
+  function saveCheckins(c) {{ localStorage.setItem(KEY, JSON.stringify(c)); }}
+
+  var checkins = loadCheckins();
+
+  // 阶段初始状态：服务端已有 completed/skipped 的任务视为已打卡
+  var phases = DATA.phases.map(function (ph) {{
+    var tasks = ph.tasks.map(function (t) {{
+      var serverDone = (t.status === 'completed' || t.status === 'skipped');
+      var base = serverDone ? 'done' : 'open';
+      var st = checkins[t.id] || base;
+      return {{ id: t.id, name: t.name, desc: t.desc, priority: t.priority,
+                 milestone_id: t.milestone_id, state: st, __server_done: serverDone }};
+    }});
+    return {{
+      id: ph.id, name: ph.name, type: ph.type, goal: ph.goal,
+      company: ph.company, rationale: ph.rationale, badge: ph.badge, badge_cls: ph.badge_cls,
+      kpi_metric: ph.kpi_metric, kpi_target: ph.kpi_target, kpi_evidence: ph.kpi_evidence,
+      resume_value: ph.resume_value, jd_text: ph.jd_text,
+      is_current: ph.is_current, tasks: tasks, milestone_tasks: ph.milestone_tasks,
+      done: 0, total: tasks.length
+    }};
+  }});
+
+  function render() {{
+    var tabsEl = document.getElementById('tabs');
+    var cardsEl = document.getElementById('cards');
+    tabsEl.innerHTML = '';
+    cardsEl.innerHTML = '';
+
+    var totalDone = 0, totalAll = 0;
+    phases.forEach(function (ph) {{
+      var done = ph.tasks.filter(function (t) {{ return t.state === 'done'; }}).length;
+      ph.done = done;
+      totalDone += done; totalAll += ph.total;
+      var pct = ph.total ? Math.round(done / ph.total * 100) : 0;
+      ph.pct = pct;
+
+      var tab = document.createElement('div');
+      tab.className = 'tab' + (ph.is_current ? ' active' : '');
+      tab.dataset.id = ph.id;
+      tab.innerHTML = ph.name + '<span class="tab-pct">' + done + '/' + ph.total + ' · ' + pct + '%</span>';
+      tabsEl.appendChild(tab);
+
+      var badge = ph.badge ? '<span class="badge ' + ph.badge_cls + '">' + ph.badge + '</span>' : '';
+      var cur = ph.is_current ? '<span class="cur-tag">[当前]</span>' : '';
+      var company = ph.company ? '<div class="company">' + ph.company
+        + (ph.rationale ? ' <span class="meta">— ' + ph.rationale + '</span>' : '') + '</div>' : '';
+      var kpi = ph.kpi_metric
+        ? '<div class="kpi">KPI：' + ph.kpi_metric + ' → ' + ph.kpi_target
+          + (ph.kpi_evidence ? '（验证：' + ph.kpi_evidence + '）' : '') + '</div>' : '';
+      var resume = ph.resume_value ? '<div class="resume">简历价值：' + ph.resume_value + '</div>' : '';
+      var jd = ph.jd_text ? '<div class="jd">' + ph.jd_text.slice(0, 400) + '</div>' : '';
+
+      var tasksHtml = '';
+      if (ph.tasks.length) {{
+        var lastMs = null;
+        ph.tasks.forEach(function (t) {{
+          var msLabel = '';
+          if (t.milestone_id && t.milestone_id !== lastMs) {{
+            lastMs = t.milestone_id;
+            msLabel = '<div class="ms">里程碑：' + t.milestone_id.replace(/.*_ms_/, 'M') + '</div>';
+          }}
+          var pr = {{ high: 'pr-high', medium: 'pr-medium', low: 'pr-low' }}[t.priority] || 'pr-medium';
+          tasksHtml += msLabel
+            + '<label class="task">'
+            + '<input type="checkbox" data-id="' + t.id + '"' + (t.state === 'done' ? ' checked' : '') + '>'
+            + '<span class="task-name' + (t.state === 'done' ? ' done' : '') + '">'
+            + '<span class="pr ' + pr + '"></span>' + t.name + '</span>'
+            + '<span class="task-meta">' + t.id + '</span>'
+            + '</label>';
+        }});
+      }} else if (ph.milestone_tasks.length) {{
+        tasksHtml = '<div class="empty">里程碑已规划（任务列表生成后即可打卡）</div>';
+      }} else {{
+        tasksHtml = '<div class="empty">暂无任务</div>';
+      }}
+
+      var card = document.createElement('div');
+      card.className = 'card' + (ph.is_current ? ' active' : '');
+      card.dataset.id = ph.id;
+      card.innerHTML =
+        '<div class="card-head"><span class="card-title">' + ph.name
+          + '<span class="type-pill">' + ph.type + '</span>' + badge + cur + '</span>'
+          + '<span class="done-txt">' + done + '/' + ph.total + ' · ' + pct + '%</span></div>'
+        + '<div class="bar"><div class="fill" style="width:' + pct + '%"></div></div>'
+        + company
+        + (ph.goal ? '<div class="goal">' + ph.goal + '</div>' : '')
+        + kpi + resume + jd
+        + '<div class="tasks">' + tasksHtml + '</div>';
+      cardsEl.appendChild(card);
+    }});
+
+    var totalPct = totalAll ? Math.round(totalDone / totalAll * 100) : 0;
+    document.getElementById('ring').style.setProperty('--p', totalPct);
+    document.getElementById('ring-pct').textContent = totalPct + '%';
+    document.getElementById('total-pct').textContent = totalPct + '%';
+    document.getElementById('total-done').textContent = '已完成 ' + totalDone + ' / ' + totalAll + ' 个任务';
+  }}
+
+  function toast(msg) {{
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(function () {{ t.classList.remove('show'); }}, 1800);
+  }}
+
+  // 阶段导航
+  document.getElementById('tabs').addEventListener('click', function (e) {{
+    var tab = e.target.closest('.tab'); if (!tab) return;
+    document.querySelectorAll('.tab').forEach(function (x) {{ x.classList.remove('active'); }});
+    document.querySelectorAll('.card').forEach(function (x) {{ x.classList.remove('active'); }});
+    tab.classList.add('active');
+    document.querySelector('.card[data-id="' + tab.dataset.id + '"]').classList.add('active');
+  }});
+
+  // 任务勾选打卡
+  document.getElementById('cards').addEventListener('change', function (e) {{
+    var cb = e.target;
+    if (!cb.matches('input[type=checkbox]')) return;
+    var id = cb.dataset.id;
+    phases.forEach(function (ph) {{
+      ph.tasks.forEach(function (t) {{ if (t.id === id) t.state = cb.checked ? 'done' : 'open'; }});
+    }});
+    checkins[id] = cb.checked ? 'done' : 'open';
+    saveCheckins(checkins);
+    render();
+    toast(cb.checked ? '已打卡：' + id : '已取消打卡：' + id);
+  }});
+
+  // 导出打卡数据（回传 LLM 同步档案）
+  document.getElementById('export-btn').addEventListener('click', function () {{
+    var rows = [];
+    phases.forEach(function (ph) {{
+      ph.tasks.forEach(function (t) {{
+        if (t.state === 'done') rows.push('checkin_task(task_id="' + t.id + '", status="completed")');
+      }});
+    }});
+    var text = rows.length ? rows.join('\\n') : '（暂无打卡记录）';
+    var pre = document.createElement('textarea');
+    pre.value = text; document.body.appendChild(pre); pre.select();
+    try {{ document.execCommand('copy'); toast('已复制 ' + rows.length + ' 条打卡指令'); }}
+    catch (err) {{ prompt('复制以下打卡指令回传对话：', text); }}
+    pre.remove();
+  }});
+
+  // 重置本地打卡
+  document.getElementById('reset-btn').addEventListener('click', function () {{
+    if (!confirm('确认清除本浏览器的打卡记录？（仅本地，不影响档案）')) return;
+    checkins = {{}};
+    phases.forEach(function (ph) {{
+      ph.tasks.forEach(function (t) {{
+        // 只重置用户本地勾选，服务端已完成的（初始 done）保持完成
+        if (t.state === 'done' && !t.__server_done) t.state = 'open';
+      }});
+    }});
+    saveCheckins(checkins); render(); toast('已重置本地打卡');
+  }});
+
+  render();
+}})();
+</script>
 </body></html>"""
 
 
