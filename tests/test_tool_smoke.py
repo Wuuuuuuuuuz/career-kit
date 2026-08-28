@@ -413,6 +413,84 @@ def test_explore_goals_methodology_yaml_exists():
     assert "不编造" in text or "绝不" in text  # 数据纪律
 
 
+def test_analyze_gaps_rejects_without_goal(temp_profile):
+    """链路守卫：want 为空或仅模糊表述时 analyze_gaps 拒绝并引导 explore_goals。"""
+    from src.server import analyze_gaps, intake
+
+    intake("who", '{"name": "小白", "status": "应届"}')
+    intake("have", '{"skills": [], "experience_level": "零基础"}')
+
+    result = json.loads(analyze_gaps())
+    assert result.get("isError") is True
+    assert result["code"] == "MISSING_DATA"
+    assert "explore_goals" in result["details"].get("suggestion", "")
+    assert not profile_module.load_profile().gap, "不应产生差距分析"
+
+    # 补上实质目标后放行
+    intake("want", '{"target_role": "AI 应用开发"}')
+    out = analyze_gaps()
+    assert "差距分析" in out or "methodologies" in out
+
+
+def test_analyze_gaps_rejects_fuzzy_want(temp_profile):
+    """want 只有 raw（'想转行'）这种模糊表述 → 仍拒绝，引导 explore_goals。"""
+    from src.server import analyze_gaps, intake
+
+    intake("who", '{"name": "张三"}')
+    intake("have", '{"skills": ["Python"]}')
+    intake("want", "想转行")  # 非 JSON → raw
+
+    result = json.loads(analyze_gaps())
+    assert result.get("isError") is True
+    assert "explore_goals" in result["details"].get("suggestion", "")
+
+
+def test_workflow_status_routes_to_explore_goals_when_no_goal(temp_profile):
+    """get_workflow_status：finalize 后无目标 → next_step 指向 explore_goals。"""
+    from src.server import finalize_profile, get_workflow_status, intake
+
+    intake("who", '{"name": "小白"}')
+    intake("have", '{"skills": [], "experience_level": "零基础"}')
+    finalize_profile()
+
+    out = get_workflow_status()
+    assert "explore_goals" in out
+
+    # 有目标 → next_step 指向 analyze_gaps
+    intake("want", '{"target_role": "AI 应用开发"}')
+    out2 = get_workflow_status()
+    assert "analyze_gaps" in out2
+
+
+def test_finalize_profile_reminds_when_no_goal(temp_profile):
+    """finalize_profile：无目标时返回目标缺失提醒。"""
+    from src.server import finalize_profile, intake
+
+    intake("who", '{"name": "小白"}')
+    intake("have", '{"skills": [], "experience_level": "零基础"}')
+
+    out = finalize_profile()
+    assert "目标缺失" in out and "explore_goals" in out
+
+    intake("want", '{"target_role": "前端工程师"}')
+    out2 = finalize_profile()
+    assert "目标缺失" not in out2
+
+
+def test_explore_goals_guards_when_goal_exists(temp_profile):
+    """explore_goals：已有实质目标时提示确认，不直接重新探索。"""
+    from src.server import explore_goals, intake
+
+    intake("who", '{"name": "张三"}')
+    intake("have", '{"skills": ["Python"]}')
+    intake("want", '{"target_role": "AI 应用开发"}')
+
+    out = explore_goals()
+    assert "已有目标" in out
+    assert "analyze_gaps" in out
+    assert "methodology" not in out  # 未直接返回方法论
+
+
 def test_apply_insight_end_to_end(temp_profile):
     """BUG-005 回归：apply_insight 可导入、可执行、调整可落地。"""
     from src.models import Task

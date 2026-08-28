@@ -241,8 +241,17 @@ def finalize_profile() -> str:
             "原因：简历有美化成分，基于美化后的水平做差距分析会严重失真。"
         )
 
+    # 目标缺失提醒：没有明确方向时不应直接 analyze_gaps，应先 explore_goals
+    goal_reminder = ""
+    if not _has_goal(profile):
+        goal_reminder = (
+            "\n\nℹ️ 目标缺失：档案中还没有明确的职业方向（want 只有模糊表述或为空）。\n"
+            "先调用 explore_goals 用三轴定位（能力×兴趣×真实市场数据）帮用户选定方向，"
+            "再用 intake(section='want') 落定，然后才进入 analyze_gaps。"
+        )
+
     return (
-        f"档案已确认。\n\n摘要：{profile.summary}{probe_reminder}\n\n"
+        f"档案已确认。\n\n摘要：{profile.summary}{probe_reminder}{goal_reminder}\n\n"
         "可以开始分析差距了，请调用 analyze_gaps。"
     )
 
@@ -253,6 +262,21 @@ def _summarize_dict(d: dict) -> str:
     if not items and "raw" in d:
         return str(d["raw"])
     return "，".join(items)
+
+
+def _has_goal(profile) -> bool:
+    """是否已有可分析的实质目标（want 关键字段或 target_jd）。
+
+    want 中的 raw（如"想转行"这种模糊表述）不算实质目标——正是 explore_goals 的场景。
+    """
+    want = profile.want or {}
+    for key in ("target_role", "role", "position", "direction", "industry",
+                "job_family", "target_company", "target_companies"):
+        if want.get(key):
+            return True
+    if profile.target_jd:
+        return True
+    return False
 
 
 @mcp.tool()
@@ -567,6 +591,17 @@ def explore_goals() -> str:
             {"missing": ["who", "have"]},
         )
 
+    # 已有实质目标时先确认：避免用户已有明确方向却被无意义地带入重新探索
+    if _has_goal(profile):
+        want_summary = _summarize_dict(profile.want or {})
+        return (
+            f"⚠️ 档案中已有目标：{want_summary}\n\n"
+            "如果用户只是想把现有规划继续推进，直接走 analyze_gaps 即可，无需 explore_goals。\n"
+            "如果用户明确想换个方向（如'我之前选的不合适'），则继续本流程重新探索，"
+            "选定后用 intake(section='want') 覆盖目标。\n"
+            "请先向用户确认意图再决定下一步。"
+        )
+
     # 加载目标选择方法论
     try:
         ctx = build_methodology_context("goal_selection", profile)
@@ -618,6 +653,21 @@ def analyze_gaps() -> str:
             "MISSING_DATA",
             "档案中缺少 have（现状）或 want（目标）信息。请先调用 intake 填充。",
             {"missing": ["have", "want"]},
+        )
+
+    # 链路守卫：没有实质目标（want 为空/仅模糊表述）时先 explore_goals，
+    # 避免对"无目标"做差距分析产出无意义报告
+    if not _has_goal(profile):
+        return error_response(
+            "MISSING_DATA",
+            "档案中还没有明确的职业方向（want 为空或只有模糊表述）。",
+            {
+                "missing": "want",
+                "suggestion": (
+                    "先调用 explore_goals 用三轴定位（能力×兴趣×真实市场数据）"
+                    "帮用户选定方向，再用 intake(section='want') 落定目标后重试。"
+                ),
+            },
         )
 
     # 加载两个方法论
@@ -1584,7 +1634,10 @@ def get_workflow_status() -> str:
     if profile.summary:
         phase = "analysis"
         if not profile.gap:
-            next_step = "analyze_gaps"
+            if _has_goal(profile):
+                next_step = "analyze_gaps"
+            else:
+                next_step = "explore_goals（尚无明确目标——先用三轴定位选定方向，再 analyze_gaps）"
         else:
             completed_steps.append("analyze_gaps")
 
@@ -1635,8 +1688,8 @@ def get_workflow_status() -> str:
     lines.append(f"- 已完成：{completed_tasks} 个")
     lines.append("")
     lines.append("### 工作流指南")
-    lines.append("- 建档：start_session → intake(who/have/want) → finalize_profile")
-    lines.append("- 分析：analyze_gaps → save_gap_analysis")
+    lines.append("- 建档：start_session → intake(who/have/want) → finalize_profile；无目标用 explore_goals 选方向")
+    lines.append("- 分析：explore_goals（无目标时）→ analyze_gaps → save_gap_analysis")
     lines.append("- 规划：generate_roadmap → save_roadmap → generate_tasks")
     lines.append("- 执行：get_next_tasks → checkin_task → trigger_insight(stage_audit/event) → apply_insight")
     lines.append("- 产出：export_dashboard 生成阶段进度仪表盘")
