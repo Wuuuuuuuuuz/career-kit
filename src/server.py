@@ -218,8 +218,14 @@ def intake(section: str, data: str) -> str:
 
 
 @mcp.tool()
-def finalize_profile() -> str:
+def finalize_profile(skip_probing: bool = False) -> str:
     """确认档案信息完整，生成摘要，解锁分析工具。
+
+    Args:
+        skip_probing: 是否跳过「简历技能摸排」（默认 False）。
+            摸排是硬性必选步骤（BUG-001）：have 有技能但无用户确认证据时，
+            本工具拒绝放行，除非用户明确表示跳过，此时 LLM 传 skip_probing=True
+            并记录留痕——不得以置信度高或简历字面为由自动跳过。
 
     何时调用：当用户已经通过 intake 填充了 who/have/want 三个 section 后调用。
     不要在档案不完整时调用此工具。
@@ -228,6 +234,43 @@ def finalize_profile() -> str:
     后续步骤：调用 analyze_gaps 开始差距分析。
     """
     profile = load_profile()
+
+    # 摸排硬门禁（BUG-001）：先检查再生成摘要——有技能但无用户确认证据时不放行
+    have = profile.have or {}
+    skills = _collect_skills(have)
+    has_evidence = bool(
+        have.get("evidence")
+        or have.get("capability_evidence")
+        or any(
+            isinstance(s, dict)
+            and s.get("evidence")
+            and (s.get("user_verified") or s.get("verified"))
+            for s in skills
+        )
+    )
+    needs_probe = bool(skills) and not has_evidence
+
+    if needs_probe and not skip_probing:
+        return error_response(
+            "PROBING_REQUIRED",
+            "档案中的技能没有用户确认过的证据，摸排是硬性必选步骤（BUG-001）：\n"
+            "简历有美化成分——按简历字面水平做差距分析会系统性失真，"
+            "不能以 confidence=高 或 evidence 照抄简历来绕过。\n"
+            "请先对关键技能逐项向用户求证：\n"
+            "  1. 这个项目是不是你独立完成的？\n"
+            "  2. 团队里有没有人 review 你的代码？\n"
+            "  3. 某个难点具体怎么解决的？实际掌握到什么程度？\n"
+            "然后把确认过的证据（evidence）写入技能条目并标 user_verified=true。\n\n"
+            "唯一跳过方式：用户明确表示不需要摸排时，LLM 以 finalize_profile(skip_probing=True) "
+            "继续，此跳过会被记录留痕。",
+            {"needs_probe": True, "skip_via": "finalize_profile(skip_probing=True)"},
+        )
+
+    # 记录摸排状态：技能有证据 / 用户主动跳过
+    if needs_probe and skip_probing:
+        profile.probe_skipped = True
+    elif not needs_probe:
+        profile.probe_skipped = False
 
     # 生成简单的结构化摘要
     parts = []
@@ -241,30 +284,12 @@ def finalize_profile() -> str:
     profile.summary = "；".join(parts) if parts else "（档案为空）"
     save_profile(profile)
 
-    # 摸排提醒（BUG-015 + BUG-001）：have 有技能但没有任何用户确认过的证据时，先摸真实水平再放行。
-    # 简历有美化成分——按简历字面水平做差距分析会系统性失真。
-    # 收紧点：confidence 自标不算证据，evidence 必须来自用户确认（user_verified=true）。
-    have = profile.have or {}
-    skills = _collect_skills(have)
-    has_evidence = bool(
-        have.get("evidence")
-        or have.get("capability_evidence")
-        or any(
-            isinstance(s, dict)
-            and s.get("evidence")
-            and (s.get("user_verified") or s.get("verified"))
-            for s in skills
-        )
-    )
-    probe_reminder = ""
-    if skills and not has_evidence:
-        probe_reminder = (
-            "\n\n摸排提醒：have 中的技能条目没有用户确认过的证据。\n"
-            "在继续 analyze_gaps 之前，请先对关键技能逐项追问证据：\n"
-            "  这个项目是不是你独立写的？现场讲一个难点？实际掌握到什么程度？\n"
-            "然后把确认过的证据（evidence）写入技能条目，并标 user_verified=true。\n"
-            "注意：confidence 自标不算证据——evidence 必须来自用户确认，不得照抄简历。\n"
-            "原因：简历有美化成分，基于美化后的水平做差距分析会严重失真。"
+    # 跳过留痕提示
+    skip_note = ""
+    if profile.probe_skipped:
+        skip_note = (
+            "\n\n已按用户要求跳过技能摸排（留痕）。后续分析基于未验证的简历字面水平，"
+            "可能存在系统性失真——请在下游分析中对此保持谨慎。"
         )
 
     # 目标缺失提醒：没有明确方向时不应直接 analyze_gaps，应先 explore_goals
@@ -277,7 +302,7 @@ def finalize_profile() -> str:
         )
 
     return (
-        f"档案已确认。\n\n摘要：{profile.summary}{probe_reminder}{goal_reminder}\n\n"
+        f"档案已确认。\n\n摘要：{profile.summary}{skip_note}{goal_reminder}\n\n"
         "可以开始分析差距了，请调用 analyze_gaps。"
     )
 
@@ -713,6 +738,32 @@ def analyze_gaps() -> str:
                     "帮用户选定方向，再用 intake(section='want') 落定目标后重试。"
                 ),
             },
+        )
+
+    # 摸排硬门禁（BUG-001 双保险）：finalize 已被跳过摸排（用户主动跳过除外）时拒绝分析。
+    # confidence 自标不算证据，evidence 必须用户确认。
+    have = profile.have or {}
+    skills = _collect_skills(have)
+    has_evidence = bool(
+        have.get("evidence")
+        or have.get("capability_evidence")
+        or any(
+            isinstance(s, dict)
+            and s.get("evidence")
+            and (s.get("user_verified") or s.get("verified"))
+            for s in skills
+        )
+    )
+    if skills and not has_evidence and not profile.probe_skipped:
+        return error_response(
+            "PROBING_REQUIRED",
+            "档案中的技能没有用户确认过的证据，摸排是硬性必选步骤（BUG-001）：\n"
+            "请先对关键技能逐项向用户求证（独立完成/讲难点/掌握程度），"
+            "写入 user_verified=true 的证据后再分析。\n"
+            "不能以 confidence=高 或 evidence 照抄简历绕过。\n"
+            "唯一跳过方式：用户明确表示不需要摸排时，重新 finalize_profile(skip_probing=True) "
+            "再继续分析。",
+            {"needs_probe": True, "skip_via": "finalize_profile(skip_probing=True)"},
         )
 
     # 加载两个方法论

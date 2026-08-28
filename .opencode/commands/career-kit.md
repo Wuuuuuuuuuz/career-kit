@@ -27,7 +27,9 @@ opencode.json 中加入：
   - **没有目标 / 方向模糊**（如"想转行但不知做什么"）→ 调用 `explore_goals`，
     让 AI 教练用三轴定位（能力×兴趣×真实市场数据）提出 2-3 个候选方向，对话引导选定
   然后追问两件事：① 有简历文件吗（给路径则 `parse_resume`）；
-  ② 关键技能逐项追问证据——做过什么项目？现场讲一个难点？（写入 have 时附 evidence 与 confidence）
+  ② 关键技能逐项追问证据——项目是不是你独立写的？现场讲一个难点？实际掌握到什么程度？
+  （写入 have 时附 evidence 与 user_verified=true；摸排是硬性必选，finalize 会阻塞，
+   不得以 confidence=高 绕过，唯一跳过是用户明确表示不需要时传 skip_probing=True）
 - **profile_building**：继续补齐缺失 section，完成后 `finalize_profile`；
   若 want 一直为空且用户仍无方向 → 引导 `explore_goals`
 - **analysis / planning**：按 next_steps 走 `analyze_gaps` → `save_gap_analysis` →

@@ -235,37 +235,65 @@ def test_fetch_jd_detail_renders_interview_content(monkeypatch):
 
 
 def test_finalize_profile_probes_when_no_evidence(temp_profile):
-    """BUG-015 + BUG-001 回归：have 有技能但无用户确认证据时，finalize 返回摸排提醒。"""
+    """BUG-015 + BUG-001 回归：have 有技能但无用户确认证据时，finalize 硬门禁阻塞不放行。"""
     from src.server import finalize_profile, intake
 
     intake("who", '{"name": "张三"}')
     intake("want", '{"target_role": "AI 工程师"}')
     intake("have", '{"skills": ["Python", "LangChain"], "experience": "2年"}')
 
-    out = finalize_profile()
-    assert "摸排提醒" in out and "user_verified" in out
+    out = json.loads(finalize_profile())
+    assert out.get("isError") is True
+    assert out["code"] == "PROBING_REQUIRED"
+    assert "user_verified" in out["message"]
 
-    # BUG-001 收紧：confidence 自标不算证据，仍需 user_verified
+    # BUG-001 收紧：confidence 自标不算证据，仍需 user_verified，仍阻塞
     intake("have", '{"skill_evidence": [{"skill": "Python", "evidence": "爬虫项目", "confidence": "high"}]}')
-    out2 = finalize_profile()
-    assert "摸排提醒" in out2, "confidence 自标不应豁免摸排"
+    out2 = json.loads(finalize_profile())
+    assert out2.get("isError") is True and out2["code"] == "PROBING_REQUIRED", \
+        "confidence 自标不应豁免摸排"
 
-    # 用户确认过的证据（user_verified=true）才不再提醒
+    # 用户确认过的证据（user_verified=true）才放行
     intake("have", '{"core_skills": [{"skill": "Python", "evidence": "爬虫项目", "user_verified": true}]}')
     out3 = finalize_profile()
-    assert "摸排提醒" not in out3
+    assert "档案已确认" in out3
+
+    # 用户主动跳过（唯一合法绕过）——留痕 probe_skipped
+    intake("have", '{"core_skills": [{"skill": "Python", "evidence": "爬虫项目"}]}')
+    out4 = finalize_profile(skip_probing=True)
+    assert "档案已确认" in out4
+    assert profile_module.load_profile().probe_skipped is True
 
 
 def test_finalize_probes_core_skills_without_evidence(temp_profile):
-    """BUG-001 回归：教练写 core_skills 无证据时摸排提醒触发（字段名兼容）。"""
+    """BUG-001 回归：教练写 core_skills 无证据时摸排硬门禁阻塞（字段名兼容）。"""
     from src.server import finalize_profile, intake
 
     intake("who", '{"name": "张三"}')
     intake("want", '{"target_role": "AI 工程师"}')
     intake("have", '{"core_skills": [{"skill": "LangGraph", "confidence": "高"}]}')
 
-    out = finalize_profile()
-    assert "摸排提醒" in out, "core_skills 无用户确认证据应触发摸排"
+    out = json.loads(finalize_profile())
+    assert out.get("isError") is True and out["code"] == "PROBING_REQUIRED", \
+        "core_skills 无用户确认证据应阻塞摸排"
+
+
+def test_analyze_gaps_blocked_without_probing(temp_profile):
+    """BUG-001 双保险：技能无验证证据且未跳过时，analyze_gaps 拒绝分析。"""
+    from src.server import analyze_gaps, finalize_profile, intake
+
+    intake("who", '{"name": "张三"}')
+    intake("want", '{"target_role": "AI 工程师"}')
+    intake("have", '{"core_skills": [{"skill": "LangGraph", "confidence": "高"}]}')
+
+    # finalize 未跳过 → analyze_gaps 也拒绝
+    out = json.loads(analyze_gaps())
+    assert out.get("isError") is True and out["code"] == "PROBING_REQUIRED"
+
+    # 用户主动跳过摸排后 → 放行分析
+    finalize_profile(skip_probing=True)
+    out2 = analyze_gaps()
+    assert "methodologies" in out2, "跳过摸排后应能分析"
 
 
 def test_get_next_tasks_shows_full_overview(temp_profile):

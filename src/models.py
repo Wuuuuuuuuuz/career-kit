@@ -131,6 +131,10 @@ class CareerProfile(BaseModel):
     section_updated_at: dict[str, str] = Field(default_factory=dict, description="各 section 最近一次写入时间")
     plan_saved_at: str = ""  # save_roadmap 每次覆盖
 
+    # 摸排门禁（BUG-001 硬性要求）：have 有技能但无用户确认证据时 finalize 不放行，
+    # 唯一跳过方式是用户明确提出（finalize_profile(skip_probing=True)），标记留痕
+    probe_skipped: bool = False
+
     summary: str = ""
     version: int = 0
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())

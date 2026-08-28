@@ -27,8 +27,11 @@ WELCOME_PROMPT = """\
 2. 获取现状：
    - 用户给了简历文件 → `parse_resume(file_path)`
    - 口头描述 → `intake(section="who", ...)` 和 `intake(section="have", ...)`
-   - **简历有美化成分**：对关键技能追问证据（做过什么项目？讲一个难点？），
-     have 中的技能条目尽量附带 evidence（证据）和 confidence（置信度）
+   - **简历有美化成分——技能摸排是硬性必选步骤（BUG-001）**：
+     对关键技能逐项追问证据（项目是不是你独立写的？讲一个难点？掌握程度？），
+     have 技能条目带 `evidence` + `user_verified=true`；
+     **不得以 confidence=高 或 evidence 照抄简历绕过**；finalize_profile 会硬门禁阻塞，
+     唯一跳过方式是用户明确表示不需要摸排时传 `finalize_profile(skip_probing=True)`（会留痕）
 3. 获取目标：
    - 有 JD 文本/文件 → `import_jd` / `import_jd_file`
    - 只有方向描述 → `intake(section="want", ...)`
