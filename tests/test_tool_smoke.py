@@ -235,7 +235,7 @@ def test_fetch_jd_detail_renders_interview_content(monkeypatch):
 
 
 def test_finalize_profile_probes_when_no_evidence(temp_profile):
-    """BUG-015 回归：have 有技能但无证据时，finalize 返回摸排提醒。"""
+    """BUG-015 + BUG-001 回归：have 有技能但无用户确认证据时，finalize 返回摸排提醒。"""
     from src.server import finalize_profile, intake
 
     intake("who", '{"name": "张三"}')
@@ -243,12 +243,29 @@ def test_finalize_profile_probes_when_no_evidence(temp_profile):
     intake("have", '{"skills": ["Python", "LangChain"], "experience": "2年"}')
 
     out = finalize_profile()
-    assert "摸排提醒" in out and "confidence" in out
+    assert "摸排提醒" in out and "user_verified" in out
 
-    # 补上证据后不再提醒
+    # BUG-001 收紧：confidence 自标不算证据，仍需 user_verified
     intake("have", '{"skill_evidence": [{"skill": "Python", "evidence": "爬虫项目", "confidence": "high"}]}')
     out2 = finalize_profile()
-    assert "摸排提醒" not in out2
+    assert "摸排提醒" in out2, "confidence 自标不应豁免摸排"
+
+    # 用户确认过的证据（user_verified=true）才不再提醒
+    intake("have", '{"core_skills": [{"skill": "Python", "evidence": "爬虫项目", "user_verified": true}]}')
+    out3 = finalize_profile()
+    assert "摸排提醒" not in out3
+
+
+def test_finalize_probes_core_skills_without_evidence(temp_profile):
+    """BUG-001 回归：教练写 core_skills 无证据时摸排提醒触发（字段名兼容）。"""
+    from src.server import finalize_profile, intake
+
+    intake("who", '{"name": "张三"}')
+    intake("want", '{"target_role": "AI 工程师"}')
+    intake("have", '{"core_skills": [{"skill": "LangGraph", "confidence": "高"}]}')
+
+    out = finalize_profile()
+    assert "摸排提醒" in out, "core_skills 无用户确认证据应触发摸排"
 
 
 def test_get_next_tasks_shows_full_overview(temp_profile):
@@ -678,3 +695,137 @@ def test_generate_roadmap_returns_step_template(temp_profile):
     assert out["step_template"][0]["name"] == "起点判定"
     assert out["step_template"][0]["checkpoint"] is True
     assert any(s["name"] == "审计" for s in out["step_template"])
+
+
+# ============ BUG-001：简历验证防线 ============
+
+
+def test_parse_resume_requires_verification(tmp_path, temp_profile):
+    """BUG-001 回归：parse_resume 把简历定位为候选素材，要求逐项求证而非直接灌库。"""
+    from src.server import parse_resume
+
+    resume = tmp_path / "resume.md"
+    resume.write_text("精通 Python，做过爬虫项目", encoding="utf-8")
+
+    out = parse_resume(str(resume))
+    assert "候选素材" in out, "简历应定位为候选素材"
+    assert "简历有美化成分" in out
+    assert "逐项向用户求证" in out or "求证" in out
+    assert "user_verified" in out or "verified" in out
+    assert "不得照抄简历" in out
+
+
+# ============ BUG-004：详细路线与打卡点 ============
+
+
+def test_detail_current_phase_requires_tasks(temp_profile):
+    """detail_current_phase：无任务时拒绝。"""
+    from src.server import detail_current_phase
+
+    data = json.loads(detail_current_phase())
+    assert data.get("isError") is True
+    assert data["code"] == "MISSING_DATA"
+
+
+def test_detail_current_phase_and_save(temp_profile):
+    """BUG-004：detail_current_phase 返回方法论+当前阶段；save_current_detail 保存并引导重新 generate_tasks。"""
+    from src.models import Task
+    from src.server import detail_current_phase, save_current_detail
+
+    p = profile_module.load_profile()
+    p.plan = {"roadmap": {"phases": [
+        {"id": "phase_1", "name": "基础学习", "milestones": [
+            {"name": "M1", "tasks": [{"name": "学Python"}, {"name": "学LangGraph"}]}
+        ]},
+        {"id": "phase_2", "name": "项目实战"},
+    ]}}
+    p.tasks = [
+        Task(id="task_001", name="学Python", phase_id="phase_1"),
+        Task(id="task_002", name="学LangGraph", phase_id="phase_1"),
+        Task(id="task_003", name="推进阶段：项目实战", phase_id="phase_2"),
+    ]
+    profile_module.save_profile(p)
+
+    out = _parse(detail_current_phase())
+    assert "detailed_route" in out["methodology"]["name"] or out["methodology"].get("name") == "当前阶段详细路线"
+    assert out["current_phase"]["phase_id"] == "phase_1", "应定位第一个有未完成任务的阶段"
+
+    detail = {
+        "phase_id": "phase_1",
+        "tasks": [
+            {"name": "学Python", "checkin_mode": "daily", "checkin_goal": 30, "priority": "high"},
+            {"name": "学LangGraph", "checkin_mode": "percent", "checkin_goal": 80, "priority": "medium"},
+        ],
+    }
+    saved = _parse(save_current_detail(json.dumps(detail, ensure_ascii=False)))
+    assert saved["context"]["phase"] == "detail_saved"
+    assert "generate_tasks" in saved["next_steps"]
+
+
+def test_generate_tasks_merges_checkin_points(temp_profile):
+    """BUG-004：generate_tasks 从 current_detail 合并打卡点字段到任务。"""
+    from src.models import Task
+    from src.server import generate_tasks
+
+    p = profile_module.load_profile()
+    p.plan = {"current_detail": {"phase_id": "phase_1", "tasks": [
+        {"name": "学Python", "checkin_mode": "daily", "checkin_goal": 30},
+    ]}, "roadmap": {"phases": [
+        {"id": "phase_1", "name": "基础学习", "milestones": [
+            {"name": "M1", "tasks": [{"name": "学Python"}]}
+        ]},
+    ]}}
+    p.tasks = [Task(id="task_001", name="学Python", phase_id="phase_1")]
+    profile_module.save_profile(p)
+
+    out = _parse(generate_tasks())
+    final = profile_module.load_profile()
+    t = final.get_task("task_001")
+    assert t.checkin_mode == "daily", "打卡点未合并"
+    assert t.checkin_goal == 30
+
+
+def test_checkin_daily_and_percent(temp_profile):
+    """BUG-004：checkin_task 支持 daily 按天累加 / percent 按比例累加，达目标才完成。"""
+    from src.models import Task
+    from src.server import checkin_task
+
+    p = profile_module.load_profile()
+    p.plan = {"roadmap": {"phases": []}}
+    p.tasks = [
+        Task(id="task_d", name="刷题30天", phase_id="phase_1", checkin_mode="daily", checkin_goal=3),
+        Task(id="task_p", name="学文档到80%", phase_id="phase_1", checkin_mode="percent", checkin_goal=80),
+    ]
+    profile_module.save_profile(p)
+
+    # daily：3 天才完成
+    out1 = checkin_task(task_id="task_d", status="completed", amount=1)
+    assert "累计 1/3 天" in out1
+    out2 = checkin_task(task_id="task_d", status="completed", amount=1)
+    assert "累计 2/3 天" in out2
+    out3 = checkin_task(task_id="task_d", status="completed", amount=1)
+    assert "已打卡" in out3
+    assert profile_module.load_profile().get_task("task_d").status == "completed"
+
+    # percent：累计到 80% 才完成
+    out4 = checkin_task(task_id="task_p", status="completed", amount=40)
+    assert "40%" in out4 and "目标 80%" in out4
+    out5 = checkin_task(task_id="task_p", status="completed", amount=40)
+    assert "已打卡" in out5
+    assert profile_module.load_profile().get_task("task_p").status == "completed"
+
+
+def test_save_roadmap_guides_execution_start(temp_profile):
+    """BUG-004：save_roadmap 文案引导开始第一阶段执行。"""
+    from src.server import intake, save_roadmap
+
+    intake("who", '{"name": "张三"}')
+    intake("have", '{"skills": ["Python"]}')
+    intake("want", '{"target_role": "AI 工程师"}')
+
+    roadmap = {"roadmap": {"strategy_summary": "测试", "phases": [
+        {"type": "project", "name": "做项目", "resume_value": "项目",
+         "kpi": {"metric": "完成", "target": "1个"}},
+    ]}}
+    out = _parse(save_roadmap(json.dumps(roadmap, ensure_ascii=False)))
+    assert "开始第一阶段" in out["message"] or "引导用户" in out["message"]

@@ -1,0 +1,54 @@
+name: 当前阶段详细路线
+version: "1.0"
+description: 执行期把「当前阶段」细化为可打卡的详细路线——按需只生成用户所处阶段，不生成后续。打卡点由 LLM 设计（按天/按比例/一次性），intern 阶段用真实岗位数据填充要求细节
+
+methodology:
+  principles:
+    - "按需细化：只生成当前阶段（第一个有未完成任务的阶段），不一次性生成后续阶段"
+    - "打卡点设计交给 LLM：任务要给出打卡方式——每天学多少（按天打卡）/ 学到多少比例（按比例打卡）/ 一次性完成"
+    - "真实数据延续：细化当前阶段时优先调 fetch_company_jobs / fetch_jd_detail 抓真实岗位数据填充要求细节（intern 阶段尤其），不停留在占位/通用描述"
+    - "粒度可打卡：每个任务是一次坐得下来可执行的颗粒度，且配打卡点（checkin_mode/checkin_goal）"
+    - "与路线图对齐：详细任务归属当前阶段（phase_id），不改变路线图阶段结构与顺序"
+    - "任务 schema 与 roadmap.yaml 一致：{name, description, priority}，额外支持 checkin_mode/checkin_goal"
+
+  phases:
+    - id: locate_current_phase
+      name: 定位当前阶段
+      guidance: |
+        找到当前阶段：第一个存在未完成任务（pending/in_progress）的阶段。
+        读取该阶段的路线图信息（goal/KPI/里程碑/company/jd），作为细化输入。
+        若所有阶段都已完成，提示用户规划下一步，无需生成详细路线。
+      quality_gate: "已确定唯一当前阶段及其路线图信息"
+
+    - id: gather_realtime_data
+      name: 获取当前阶段真实数据
+      guidance: |
+        按阶段类型决定取数：
+        - intern / 有真实岗位依据的阶段：fetch_company_jobs 搜同类岗位、fetch_jd_detail 取全文，
+          把岗位要求（技能/职责/薪资）细化到任务描述里
+        - learn / 自建 project：无需岗位数据，任务来自路线图 KPI 与里程碑
+        抓取失败就如实说明，用路线图已有信息细化，不编造。
+      data_needs:
+        - type: job_requirements
+          query_hint: "{target_role} {company} 岗位要求"
+          local_paths: ["jds/"]
+      quality_gate: "intern 阶段有真实岗位数据支撑或如实标注无数据"
+
+    - id: design_checkin_tasks
+      name: 设计打卡任务
+      guidance: |
+        把当前阶段的里程碑任务拆成可打卡的详细任务列表。每个任务：
+        1. name + description（含怎么做、依据哪个真实岗位要求）
+        2. priority: high/medium/low
+        3. checkin_mode 打卡方式：
+           - once: 一次性完成（如"写一篇技术博客"）
+           - daily: 按天打卡，checkin_goal = 目标天数（如"每天刷 5 题 LeetCode"→ daily, goal=30）
+           - percent: 按比例打卡，checkin_goal = 目标比例（如"学完 LangChain 官方文档 80%"→ percent, goal=80）
+        任务不要过多：当前阶段 5-15 个即可，粒度「一次坐下来可完成」。
+      quality_gate: "每个任务有打卡方式；daily/percent 有明确目标；总数合理不臃肿"
+
+  output_schema:
+    phase_id: "当前阶段 id（不做修改，仅供核对）"
+    tasks: "详细任务列表（调用 save_current_detail 写入档案），每项含 name / description / priority / checkin_mode / checkin_goal"
+    checkin_mode: "once | daily | percent"
+    checkin_goal: "daily 为目标天数；percent 为目标比例（0-100）"

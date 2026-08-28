@@ -1,6 +1,6 @@
 # MCP 工具
 
-> Career Kit 提供的 MCP 工具，用于职业规划全流程（共 30 个）
+> Career Kit 提供的 MCP 工具，用于职业规划全流程（共 32 个）
 >
 > 核心理念：**顺序归产品，时间归用户**——不为任务设定时限；日程由 LLM 在对话中一次性产出 markdown/HTML 文档，系统不存储。
 
@@ -51,8 +51,10 @@
 | 工具 | 作用 | 调用时机 |
 |------|------|----------|
 | `generate_tasks` | 从路线图生成任务（重建时历史进度沉淀为能力证据） | save_roadmap 之后 |
+| `detail_current_phase` | 生成当前阶段的详细路线（按需只细化当前阶段，含按天/按比例打卡点；intern 阶段调真实数据抓取填充要求） | 用户要进入执行、需要更细颗粒度时 |
+| `save_current_detail` | 保存当前阶段详细路线（checkin_mode/checkin_goal） | LLM 设计完成后，随后重新 generate_tasks 合并打卡点 |
 | `get_next_tasks` | 当前阶段的下一步任务（关卡式） | 用户想知道「现在做什么」 |
-| `checkin_task` | 打卡（完成自动沉淀能力证据） | 用户完成/跳过任务时 |
+| `checkin_task` | 打卡（一次性 completed / 按天 amount=1 / 按比例 amount=进度，完成自动沉淀能力证据） | 用户完成/推进任务时 |
 
 ### 洞察与产出工具
 

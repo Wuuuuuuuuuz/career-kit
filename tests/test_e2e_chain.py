@@ -563,7 +563,8 @@ def test_step8_mcp_tools_registered():
         # 规划
         "generate_roadmap", "save_roadmap",
         # 任务执行
-        "generate_tasks", "get_next_tasks", "checkin_task",
+        "generate_tasks", "detail_current_phase", "save_current_detail",
+        "get_next_tasks", "checkin_task",
         # 洞察与产出
         "trigger_insight", "apply_insight", "get_progress",
         "get_workflow_status", "export_dashboard",

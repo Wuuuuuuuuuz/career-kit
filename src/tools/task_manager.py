@@ -33,6 +33,9 @@ def create_tasks_from_roadmap(profile: CareerProfile) -> list[Task]:
     任务 schema 与 sop/roadmap.yaml 的 output_schema 一致：
     {name, description, priority}。
 
+    若当前阶段有详细路线（profile.plan.current_detail），按其打卡点
+    （checkin_mode/checkin_goal）合并到对应任务（BUG-004）。
+
     Args:
         profile: 用户职业档案
 
@@ -41,6 +44,13 @@ def create_tasks_from_roadmap(profile: CareerProfile) -> list[Task]:
     """
     roadmap = profile.plan.get("roadmap", profile.plan)
     phases = roadmap.get("phases", [])
+
+    # 详细路线打卡点索引：task name -> {checkin_mode, checkin_goal, description}
+    detail_tasks: dict[str, dict] = {}
+    current_detail = (profile.plan.get("current_detail") or {})
+    for d in current_detail.get("tasks", []):
+        if isinstance(d, dict) and d.get("name"):
+            detail_tasks[d["name"]] = d
 
     tasks = []
 
@@ -54,25 +64,32 @@ def create_tasks_from_roadmap(profile: CareerProfile) -> list[Task]:
 
             # 从里程碑的 tasks 字段生成任务
             for task_def in milestone.get("tasks", []):
+                name = task_def.get("name", "")
+                detail = detail_tasks.get(name, {})
                 task = Task(
                     id=next_task_id_for(tasks),
-                    name=task_def.get("name", ""),
-                    description=task_def.get("description", ""),
+                    name=name,
+                    description=detail.get("description", task_def.get("description", "")),
                     phase_id=phase_id,
                     milestone_id=ms_id,
-                    priority=task_def.get("priority", "medium"),
+                    priority=detail.get("priority", task_def.get("priority", "medium")),
+                    checkin_mode=detail.get("checkin_mode", task_def.get("checkin_mode", "")),
+                    checkin_goal=float(detail.get("checkin_goal", task_def.get("checkin_goal", 0)) or 0),
                 )
                 tasks.append(task)
 
             # 如果里程碑没有 tasks 字段，用里程碑本身作为任务
             if not milestone.get("tasks"):
+                ms_det = detail_tasks.get(ms_name, {})
                 tasks.append(Task(
                     id=next_task_id_for(tasks),
                     name=ms_name,
-                    description=milestone.get("description", ""),
+                    description=ms_det.get("description", milestone.get("description", "")),
                     phase_id=phase_id,
                     milestone_id=ms_id,
-                    priority="medium",
+                    priority=ms_det.get("priority", "medium"),
+                    checkin_mode=ms_det.get("checkin_mode", ""),
+                    checkin_goal=float(ms_det.get("checkin_goal", 0) or 0),
                 ))
 
         # 阶段没有任何可执行内容时，用阶段名兜底，保证阶段可追踪
@@ -106,14 +123,21 @@ def checkin_task(
     task_id: str,
     status: str = TaskStatus.COMPLETED,
     notes: str = "",
+    amount: float = 0,
 ) -> tuple[CareerProfile, CheckIn]:
     """打卡任务。
+
+    支持打卡方式（BUG-004）：
+    - once（默认/空）：一次打卡即完成
+    - daily：按天打卡，amount=1 表示当天完成，累计到 checkin_goal 天数才 completed
+    - percent：按比例打卡，amount=本次完成比例，累计到 checkin_goal 比例才 completed
 
     Args:
         profile: 用户职业档案
         task_id: 任务 ID
         status: 打卡状态（completed, skipped）
         notes: 备注
+        amount: 本次打卡量（daily: 1 天；percent: 本次比例 0-100）
 
     Returns:
         (更新后的档案, 打卡记录)
@@ -123,10 +147,26 @@ def checkin_task(
         raise ValueError(f"任务 {task_id} 不存在")
 
     # 更新任务状态
-    if status == TaskStatus.COMPLETED:
-        task.complete()
-    elif status == TaskStatus.SKIPPED:
+    if status == TaskStatus.SKIPPED:
         task.skip(notes)
+    elif status == TaskStatus.COMPLETED:
+        mode = task.checkin_mode or "once"
+        if mode == "once":
+            task.complete()
+        elif mode == "daily":
+            task.checkin_progress += 1
+            if task.checkin_goal > 0 and task.checkin_progress >= task.checkin_goal:
+                task.complete()
+            else:
+                task.status = TaskStatus.IN_PROGRESS
+        elif mode == "percent":
+            task.checkin_progress = min(100.0, task.checkin_progress + amount)
+            if task.checkin_goal > 0 and task.checkin_progress >= task.checkin_goal:
+                task.complete()
+            else:
+                task.status = TaskStatus.IN_PROGRESS
+        else:
+            task.complete()
     else:
         raise ValueError(f"无效的打卡状态: {status}")
 
@@ -135,6 +175,7 @@ def checkin_task(
         task_id=task_id,
         status=status,
         notes=notes,
+        amount=amount,
     )
 
     profile.add_checkin(checkin)

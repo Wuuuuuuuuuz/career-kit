@@ -157,9 +157,17 @@ def parse_resume(file_path: str) -> str:
 
     return (
         f"--- RESUME CONTENT ---\n{text}\n--- END ---\n\n"
-        "根据以上简历内容，请调用 intake 工具填充：\n"
+        "以上是候选素材，不是已确认的事实。\n\n"
+        "**简历有美化成分——写入档案前必须先验证：**\n"
+        "1. 对关键技能/项目逐项向用户求证：这个项目是不是你独立完成的？\n"
+        "   团队里有没有人 review 你的代码？某个难点具体怎么解决的？\n"
+        "   实际掌握到什么程度？\n"
+        "2. 证据（evidence）必须来自用户确认，**不得照抄简历原文**；\n"
+        "   未经用户确认的技能标 `verified: false`，确认过的标 `verified: true`。\n"
+        "3. 学历/城市/届别等身份信息直接可用；技能与项目必须验证后再写入 have。\n\n"
+        "请调用 intake 工具填充：\n"
         '- "who" section：姓名、联系方式、教育背景、当前状态\n'
-        '- "have" section：技能、工作经历、项目经验、证书\n\n'
+        '- "have" section：技能、工作经历、项目经验、证书（每项带 evidence 与 verified）\n\n'
         '示例：intake(section="who", data=\'{"name":"张三", "education":"..."}\')'
     )
 
@@ -233,23 +241,29 @@ def finalize_profile() -> str:
     profile.summary = "；".join(parts) if parts else "（档案为空）"
     save_profile(profile)
 
-    # 摸排提醒（BUG-015）：have 有技能但没有任何证据/置信度标注时，先摸真实水平再放行。
+    # 摸排提醒（BUG-015 + BUG-001）：have 有技能但没有任何用户确认过的证据时，先摸真实水平再放行。
     # 简历有美化成分——按简历字面水平做差距分析会系统性失真。
+    # 收紧点：confidence 自标不算证据，evidence 必须来自用户确认（user_verified=true）。
     have = profile.have or {}
-    skills = have.get("skills", [])
+    skills = _collect_skills(have)
     has_evidence = bool(
         have.get("evidence")
-        or have.get("skill_evidence")
         or have.get("capability_evidence")
-        or any(isinstance(s, dict) and (s.get("evidence") or s.get("confidence")) for s in skills)
+        or any(
+            isinstance(s, dict)
+            and s.get("evidence")
+            and (s.get("user_verified") or s.get("verified"))
+            for s in skills
+        )
     )
     probe_reminder = ""
     if skills and not has_evidence:
         probe_reminder = (
-            "\n\n 摸排提醒：have 中的技能没有任何证据/置信度标注。\n"
+            "\n\n摸排提醒：have 中的技能条目没有用户确认过的证据。\n"
             "在继续 analyze_gaps 之前，请先对关键技能逐项追问证据：\n"
-            "  做过什么项目？现场讲一个难点？实际掌握到什么程度？\n"
-            "然后把证据（evidence）与置信度（confidence）补充进 have 后再进入分析。\n"
+            "  这个项目是不是你独立写的？现场讲一个难点？实际掌握到什么程度？\n"
+            "然后把确认过的证据（evidence）写入技能条目，并标 user_verified=true。\n"
+            "注意：confidence 自标不算证据——evidence 必须来自用户确认，不得照抄简历。\n"
             "原因：简历有美化成分，基于美化后的水平做差距分析会严重失真。"
         )
 
@@ -289,6 +303,25 @@ def _has_goal(profile) -> bool:
     if profile.target_jd:
         return True
     return False
+
+
+def _collect_skills(have: dict) -> list:
+    """聚合 have 中的技能条目（兼容 skills / core_skills / skill_evidence）。
+
+    Returns:
+        技能条目列表（dict 或 str）
+    """
+    skills: list = []
+    for key in ("skills", "core_skills"):
+        val = have.get(key, [])
+        if isinstance(val, list):
+            skills.extend(val)
+        elif isinstance(val, dict):
+            skills.append(val)
+    ev = have.get("skill_evidence", [])
+    if isinstance(ev, list):
+        skills.extend(ev)
+    return skills
 
 
 @mcp.tool()
@@ -705,7 +738,10 @@ def analyze_gaps() -> str:
             "1. 先用 fetch_company_jobs 搜索目标企业的真实岗位（先 list_data_sources 查看可用企业）\n"
             "2. 用 fetch_jd_detail 获取 JD 全文和同背景案例\n"
             "3. 基于真实数据从简历过筛和面试通过两个维度分析差距\n"
-            "4. 调用 save_gap_analysis(gap_json) 保存结构化结果"
+            "4. 分析前先核对 have 技能的证据来源：若技能条目的 evidence 未经用户确认\n"
+            "   （无 user_verified 标记），先追问证据（做过什么项目/讲一个难点）再分析，\n"
+            "   避免基于简历字面水平做系统性失真判断\n"
+            "5. 调用 save_gap_analysis(gap_json) 保存结构化结果"
         ),
     })
 
@@ -1093,7 +1129,8 @@ def save_roadmap(roadmap_json: str) -> str:
         "message": (
             f"路线图已保存。\n\n{report}{hard_text}{warnings_text}\n\n"
             f"路线图 HTML 已生成：{map_path}（双击即看，可随时用 export_dashboard(mode=\"roadmap\") 重新生成）\n\n"
-            "接下来可以调用 generate_tasks 生成任务列表开始执行。"
+            "接下来调用 generate_tasks 生成任务列表；生成后引导用户按路线图开始第一阶段执行"
+            "（或先 detail_current_phase 细化当前阶段的打卡路线）。"
         ),
         "next_steps": ["generate_tasks"],
         "context": {
@@ -1436,10 +1473,121 @@ def generate_tasks() -> str:
         f"已将 {len(evidence)} 条历史完成记录沉淀为能力证据。\n" if evidence else ""
     )
     return _json({
-        "message": f"{migrated_note}已从路线图生成 {len(tasks)} 个任务。",
+        "message": (
+            f"{migrated_note}已从路线图生成 {len(tasks)} 个任务。\n"
+            "下一步：调用 get_next_tasks 查看当前阶段的执行任务，开始第一阶段；"
+            "或调用 detail_current_phase 生成当前阶段的详细路线（含按天/按比例打卡点）。"
+        ),
         "tasks": format_task_list(tasks, "生成的任务"),
-        "next_steps": ["get_next_tasks"],
+        "next_steps": ["get_next_tasks", "detail_current_phase"],
         "context": {"phase": "tasks_generated", "task_count": len(tasks)},
+    })
+
+
+@mcp.tool()
+def detail_current_phase() -> str:
+    """生成当前阶段的详细路线（执行期细化）。
+
+    何时调用：用户想进入执行、需要把当前阶段拆成可打卡的颗粒度时调用。
+    只细化当前阶段（第一个有未完成任务的阶段），不生成后续阶段。
+
+    返回方法论上下文。LLM 按照 detailed_route 方法论指引，结合真实岗位数据
+    （fetch_company_jobs / fetch_jd_detail）设计当前阶段的打卡任务，
+    然后调用 save_current_detail(detail_json) 保存。
+
+    前置条件：路线图与任务已生成（generate_tasks 已调用）。
+    后续步骤：LLM 设计后调用 save_current_detail，然后重新 generate_tasks 合并打卡点。
+    """
+    from .tools.task_manager import current_phase_view
+
+    profile = load_profile()
+
+    if not profile.tasks:
+        return error_response(
+            "MISSING_DATA",
+            "请先调用 generate_tasks 生成任务，再细化当前阶段。",
+            {"missing": "tasks"},
+        )
+
+    view = current_phase_view(profile)
+    if view is None:
+        return (
+            "所有阶段的任务都已完成——没有需要细化的当前阶段。\n"
+            "建议回顾目标，规划下一步方向。"
+        )
+
+    # 当前阶段的路线图信息
+    roadmap = profile.plan.get("roadmap", profile.plan)
+    phases = roadmap.get("phases", [])
+    phase = next((p for p in phases if p.get("id") == view["phase_id"]), None) or {}
+
+    ctx = build_methodology_context("detailed_route", profile)
+
+    return _json({
+        "methodology": ctx["methodology"],
+        "profile": ctx["profile"],
+        "current_phase": {
+            "phase_id": view["phase_id"],
+            "phase_name": view["phase_name"],
+            "goal": phase.get("goal", ""),
+            "company": phase.get("company", ""),
+            "kpi": phase.get("kpi", {}),
+            "milestones": phase.get("milestones", []),
+            "jd_status": phase.get("jd_status", "not_required"),
+        },
+        "instructions": (
+            "请按照 detailed_route 方法论，只细化当前阶段「{phase_name}」：\n"
+            "1. 若该阶段是 intern（实习）且有目标公司，先用 fetch_company_jobs / fetch_jd_detail "
+            "抓真实岗位数据，把要求细节细化到任务描述，不停留在占位\n"
+            "2. 把里程碑任务拆成可打卡的详细任务：每个任务带 checkin_mode "
+            "（once/daily/percent）与 checkin_goal（daily=天数，percent=比例）\n"
+            "3. 任务 5-15 个，粒度「一次坐下来可完成」\n"
+            "4. 调用 save_current_detail(detail_json) 保存，然后重新 generate_tasks 合并打卡点"
+        ).format(phase_name=view["phase_name"]),
+    })
+
+
+@mcp.tool()
+def save_current_detail(detail_json: str) -> str:
+    """保存当前阶段的详细路线。
+
+    Args:
+        detail_json: 详细路线的 JSON 字符串
+
+    Schema（与 sop/detailed_route.yaml 一致）:
+        {
+            "phase_id": "phase_1",
+            "tasks": [
+                {
+                    "name": "每天刷 5 题 LeetCode",
+                    "description": "...",
+                    "priority": "high",
+                    "checkin_mode": "daily",
+                    "checkin_goal": 30
+                }
+            ]
+        }
+    """
+    try:
+        detail = _parse_json_param(detail_json, "当前阶段详细路线")
+    except InvalidJsonError as exc:
+        return error_response(exc.code, exc.message, exc.details)
+
+    profile = load_profile()
+    profile.plan.setdefault("current_detail", {})
+    profile.plan["current_detail"] = detail
+    profile.touch()
+    save_profile(profile)
+
+    tasks_n = len(detail.get("tasks", []))
+    return _json({
+        "message": (
+            f"当前阶段详细路线已保存（{tasks_n} 个任务）。\n"
+            "请重新调用 generate_tasks，将打卡点（checkin_mode/checkin_goal）合并进任务列表，"
+            "然后用 get_next_tasks 开始执行。"
+        ),
+        "next_steps": ["generate_tasks"],
+        "context": {"phase": "detail_saved", "task_count": tasks_n},
     })
 
 
@@ -1511,7 +1659,7 @@ def get_next_tasks() -> str:
 
 
 @mcp.tool()
-def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> str:
+def checkin_task(task_id: str, status: str = "completed", notes: str = "", amount: float = 0) -> str:
     """打卡任务。
 
     何时调用：用户完成或跳过某个任务时调用。
@@ -1521,6 +1669,8 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
         task_id: 任务 ID（从 get_next_tasks 获取）
         status: 打卡状态（completed 或 skipped）
         notes: 备注（可选）
+        amount: 本次打卡量（可选）——daily 打卡传 1（当天完成），
+            percent 打卡传本次完成比例（如完成 20% 传 20）
     """
     from .tools.task_manager import (
         checkin_task as do_checkin,
@@ -1532,7 +1682,7 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
     profile = load_profile()
 
     try:
-        profile, checkin = do_checkin(profile, task_id, status, notes)
+        profile, checkin = do_checkin(profile, task_id, status, notes, amount)
     except ValueError as e:
         return error_response("MISSING_DATA", str(e), {"task_id": task_id})
 
@@ -1550,10 +1700,26 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
     _phase_names = {p.get("id"): p.get("name", p.get("id")) for p in _roadmap_phases}
 
     lines = []
-    lines.append(f" 已打卡：{task.name if task else task_id}")
+    lines.append(f"已打卡：{task.name if task else task_id}")
     if status == "skipped":
         lines[0] = f"已跳过：{task.name if task else task_id}"
     lines.append("")
+
+    # 打卡点进度提示（BUG-004）：daily/percent 未完成时展示累计进度
+    if status == "completed" and task and task.status != "completed":
+        mode = task.checkin_mode or "once"
+        if mode == "daily":
+            lines.append(
+                f"今日已打卡（累计 {int(task.checkin_progress)}/{int(task.checkin_goal)} 天）——"
+                "达到目标天数即完成本任务。"
+            )
+            lines.append("")
+        elif mode == "percent":
+            lines.append(
+                f"进度更新至 {task.checkin_progress:.0f}%（目标 {task.checkin_goal:.0f}%）——"
+                "达到目标比例即完成本任务。"
+            )
+            lines.append("")
 
     if newly_completed:
         _name = _phase_names.get(newly_completed[0], newly_completed[0])
@@ -1561,7 +1727,7 @@ def checkin_task(task_id: str, status: str = "completed", notes: str = "") -> st
         lines.append("建议调用 trigger_insight(trigger_type=\"stage_audit\") 进行阶段审计。")
         lines.append("")
 
-    if status == "completed" and task:
+    if status == "completed" and task and task.status == "completed":
         lines.append("如果完成得轻松，可以考虑加深难度或直接推进下一项——由你和用户在对话中决定。")
 
     save_profile(profile)
@@ -1843,7 +2009,7 @@ def get_workflow_status() -> str:
     lines.append("- 建档：start_session → intake(who/have/want) → finalize_profile；无目标用 explore_goals 选方向")
     lines.append("- 分析：explore_goals（无目标时）→ analyze_gaps → save_gap_analysis")
     lines.append("- 规划：generate_roadmap（按 step_template 分步：起点判定→目标拆解→阶段序列→逐阶段细化→审计→定稿）→ save_roadmap → generate_tasks")
-    lines.append("- 执行：get_next_tasks → checkin_task → trigger_insight(stage_audit/event) → apply_insight")
+    lines.append("- 执行：generate_tasks → detail_current_phase（可选，按当前阶段细化打卡点）→ get_next_tasks → checkin_task → trigger_insight(stage_audit/event) → apply_insight")
     lines.append("- 产出：export_dashboard 生成阶段进度仪表盘")
     lines.append("")
     lines.append("节奏原则：顺序归产品，时间归用户——不为任务设定时限。")
@@ -2065,6 +2231,9 @@ def _render_roadmap_map(profile) -> str:
                 "status": t.status,
                 "priority": t.priority,
                 "milestone_id": t.milestone_id,
+                "checkin_mode": t.checkin_mode or "once",
+                "checkin_goal": t.checkin_goal,
+                "checkin_progress": t.checkin_progress,
             })
         # 里程碑里的任务定义（未生成 task 时前端也能展示）
         milestone_tasks = []
@@ -2175,6 +2344,12 @@ h1 {{ font-size: 24px; letter-spacing: .3px; }}
 .task-name {{ flex: 1; font-size: 13.5px; }}
 .task-name.done {{ text-decoration: line-through; color: var(--muted); }}
 .task-meta {{ color: var(--muted); font-size: 12px; }}
+.ck-ctl {{ color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; }}
+.ck-btn {{ padding: 3px 10px; border: 1px solid var(--brand); background: var(--brand-soft);
+           color: var(--brand); border-radius: 8px; font-size: 12px; cursor: pointer; }}
+.ck-btn:hover {{ background: var(--brand); color: #fff; }}
+.done-badge {{ color: var(--ok); font-size: 12px; margin-right: 8px; font-weight: 600; }}
+.ck-ctl input[type=range] {{ width: 110px; accent-color: var(--brand); }}
 .ms {{ font-size: 12px; color: var(--muted); margin-top: 8px; font-weight: 600; }}
 .pr {{ display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }}
 .pr-high {{ background: #e5484d; }} .pr-medium {{ background: #f5a524; }} .pr-low {{ background: #22a06b; }}
@@ -2247,8 +2422,11 @@ h1 {{ font-size: 24px; letter-spacing: .3px; }}
       var serverDone = (t.status === 'completed' || t.status === 'skipped');
       var base = serverDone ? 'done' : 'open';
       var st = checkins[t.id] || base;
+      var mode = t.checkin_mode || 'once';
       return {{ id: t.id, name: t.name, desc: t.desc, priority: t.priority,
-                 milestone_id: t.milestone_id, state: st, __server_done: serverDone }};
+                 milestone_id: t.milestone_id, state: st, __server_done: serverDone,
+                 mode: mode, goal: t.checkin_goal || 0,
+                 progress: (t.checkin_progress || 0) }};
     }});
     return {{
       id: ph.id, name: ph.name, type: ph.type, goal: ph.goal,
@@ -2300,10 +2478,29 @@ h1 {{ font-size: 24px; letter-spacing: .3px; }}
             msLabel = '<div class="ms">里程碑：' + t.milestone_id.replace(/.*_ms_/, 'M') + '</div>';
           }}
           var pr = {{ high: 'pr-high', medium: 'pr-medium', low: 'pr-low' }}[t.priority] || 'pr-medium';
+          var nameCls = t.state === 'done' ? ' task-name done' : ' task-name';
+          var ctl = '';
+          if (t.state === 'done') {{
+            // 已完成：显示打勾状态 + 完成标记
+            ctl = '<span class="done-badge">完成</span>';
+          }} else if (t.mode === 'daily') {{
+            ctl = '<span class="ck-ctl" data-mode="daily" data-id="' + t.id + '">'
+              + '打卡 ' + Math.floor(t.progress) + '/' + (t.goal || '?') + ' 天'
+              + ' <button class="ck-btn" data-action="daily" data-id="' + t.id + '">今天打卡</button>'
+              + '</span>';
+          }} else if (t.mode === 'percent') {{
+            ctl = '<span class="ck-ctl" data-mode="percent" data-id="' + t.id + '">'
+              + '进度 ' + Math.floor(t.progress) + '%/' + (t.goal || 100) + '%'
+              + ' <input type="range" min="0" max="' + (t.goal || 100) + '" value="' + Math.floor(t.progress)
+              + '" data-action="percent" data-id="' + t.id + '" style="vertical-align:middle">'
+              + '</span>';
+          }} else {{
+            ctl = '<input type="checkbox" data-action="once" data-id="' + t.id + '">';
+          }}
           tasksHtml += msLabel
             + '<label class="task">'
-            + '<input type="checkbox" data-id="' + t.id + '"' + (t.state === 'done' ? ' checked' : '') + '>'
-            + '<span class="task-name' + (t.state === 'done' ? ' done' : '') + '">'
+            + ctl
+            + '<span class="' + nameCls + '">'
             + '<span class="pr ' + pr + '"></span>' + t.name + '</span>'
             + '<span class="task-meta">' + t.id + '</span>'
             + '</label>';
@@ -2351,26 +2548,92 @@ h1 {{ font-size: 24px; letter-spacing: .3px; }}
     document.querySelector('.card[data-id="' + tab.dataset.id + '"]').classList.add('active');
   }});
 
-  // 任务勾选打卡
-  document.getElementById('cards').addEventListener('change', function (e) {{
-    var cb = e.target;
-    if (!cb.matches('input[type=checkbox]')) return;
-    var id = cb.dataset.id;
+  // 任务打卡：once checkbox / daily 按钮 / percent 滑块
+  function applyCheckin(id, mode, done, amount) {{
+    var updated = false;
     phases.forEach(function (ph) {{
-      ph.tasks.forEach(function (t) {{ if (t.id === id) t.state = cb.checked ? 'done' : 'open'; }});
+      ph.tasks.forEach(function (t) {{
+        if (t.id === id) {{
+          t.state = done ? 'done' : 'open';
+          if (mode === 'daily') t.progress = done ? (t.goal || 1) : (t.progress || 0);
+          if (mode === 'percent') t.progress = amount;
+          updated = true;
+        }}
+      }});
     }});
-    checkins[id] = cb.checked ? 'done' : 'open';
-    saveCheckins(checkins);
-    render();
-    toast(cb.checked ? '已打卡：' + id : '已取消打卡：' + id);
+    if (updated) {{
+      checkins[id] = done ? 'done' : 'open';
+      checkins[id + ':progress'] = (mode === 'daily' || mode === 'percent') ? (amount || 0) : null;
+      saveCheckins(checkins);
+      render();
+      toast(done ? '已打卡：' + id : '已更新进度：' + id);
+    }}
+  }}
+
+  // click：once 完成勾选（点击任务行切换） / daily 打卡按钮
+  document.getElementById('cards').addEventListener('click', function (e) {{
+    var btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    var action = btn.getAttribute('data-action');
+    var id = btn.getAttribute('data-id');
+    if (action === 'once') {{
+      // 点击任务行（checkbox 外层 label）切换完成状态
+      var t = null;
+      phases.forEach(function (ph) {{
+        ph.tasks.forEach(function (x) {{ if (x.id === id) t = x; }});
+      }});
+      if (!t) return;
+      applyCheckin(id, 'once', t.state !== 'done', 1);
+    }} else if (action === 'daily') {{
+      var task = null;
+      phases.forEach(function (ph) {{
+        ph.tasks.forEach(function (x) {{ if (x.id === id) task = x; }});
+      }});
+      if (!task) return;
+      // 当天打卡一次：进度 +1
+      var newProg = (task.progress || 0) + 1;
+      var goal = task.goal || 0;
+      var doneNow = goal > 0 && newProg >= goal;
+      task.progress = newProg;
+      applyCheckin(id, 'daily', doneNow, doneNow ? goal : newProg);
+    }}
   }});
 
-  // 导出打卡数据（回传 LLM 同步档案）
+  // change：once checkbox 勾选 / percent 滑块
+  document.getElementById('cards').addEventListener('change', function (e) {{
+    var el = e.target;
+    var action = el.getAttribute && el.getAttribute('data-action');
+    var id = el.getAttribute && el.getAttribute('data-id');
+    if (action === 'once' && el.matches('input[type=checkbox]')) {{
+      applyCheckin(id, 'once', el.checked, 1);
+    }} else if (action === 'percent' && el.matches('input[type=range]')) {{
+      var val = parseFloat(el.value);
+      var task = null;
+      phases.forEach(function (ph) {{
+        ph.tasks.forEach(function (x) {{ if (x.id === id) task = x; }});
+      }});
+      var goal = task ? (task.goal || 100) : 100;
+      applyCheckin(id, 'percent', val >= goal, val);
+    }}
+  }});
+
+  // 导出打卡数据（回传 LLM 同步档案，按打卡方式输出含 amount）
   document.getElementById('export-btn').addEventListener('click', function () {{
     var rows = [];
     phases.forEach(function (ph) {{
       ph.tasks.forEach(function (t) {{
-        if (t.state === 'done') rows.push('checkin_task(task_id="' + t.id + '", status="completed")');
+        if (t.state === 'done' && !t.__server_done) {{
+          if (t.mode === 'daily') {{
+            rows.push('checkin_task(task_id="' + t.id + '", status="completed", amount=' + (t.goal || 1) + ')');
+          }} else if (t.mode === 'percent') {{
+            rows.push('checkin_task(task_id="' + t.id + '", status="completed", amount=' + (t.progress || 0) + ')');
+          }} else {{
+            rows.push('checkin_task(task_id="' + t.id + '", status="completed")');
+          }}
+        }} else if (t.state !== 'done' && (t.mode === 'daily' || t.mode === 'percent') && t.progress > 0) {{
+          // 部分进度：导出累计打卡
+          rows.push('checkin_task(task_id="' + t.id + '", status="completed", amount=' + (t.progress || 0) + ')');
+        }}
       }});
     }});
     var text = rows.length ? rows.join('\\n') : '（暂无打卡记录）';

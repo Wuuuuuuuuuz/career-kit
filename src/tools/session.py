@@ -73,17 +73,25 @@ WELCOME_PROMPT = """\
     起点/层级/届别/必填会做硬校验，有问题会提示）
 
 ### Phase 4: 执行与打卡
-11. `generate_tasks` → 从路线图生成任务列表（重建时已完成进度自动沉淀为能力证据）
-12. `get_next_tasks` → 查看当前阶段的下一步任务（关卡式：顺序即答案）
-13. 用户完成后 → `checkin_task(task_id=..., status="completed")`
+11. `generate_tasks` → 从路线图生成任务列表（重建时已完成进度自动沉淀为能力证据）；
+    生成后**主动引导用户开始第一阶段执行**，不要停在「下一步是什么」等用户问
+12. **详细路线（按需）**：用户要进入执行、需要更细颗粒度时 →
+    `detail_current_phase` 只细化当前阶段（含按天/按比例打卡点），
+    细化 intern 阶段时用 `fetch_company_jobs` / `fetch_jd_detail` 抓真实岗位数据填充要求细节，
+    然后 `save_current_detail` + 重新 `generate_tasks` 合并打卡点
+13. `get_next_tasks` → 查看当前阶段的下一步任务（关卡式：顺序即答案）
+14. 用户完成/推进 → `checkin_task(task_id=..., status="completed", amount=...)`
+    - 一次性任务：status="completed" 即完成
+    - 按天打卡任务：amount=1 记一天，累计到目标天数完成
+    - 按比例任务：amount=本次比例（如完成 20% 传 20），累计到目标比例完成
     - 完成的任务自动沉淀为能力证据写入档案
 
 ### Phase 5: 洞察调整
-14. 触发时机（只有两种）：
+15. 触发时机（只有两种）：
     - 完成一个阶段 → `trigger_insight(trigger_type="stage_audit")`（每阶段只审计一次）
     - 用户报告事件（如拿到面试）→ `trigger_insight(trigger_type="event", event_description=...)`
-15. 你分析后 → `apply_insight(insight_json=...)`
-16. 查看整体进度 → `get_progress`
+16. 你分析后 → `apply_insight(insight_json=...)`
+17. 查看整体进度 → `get_progress`
 
 ### 产出物
 - 仪表盘：`export_dashboard()` → 生成内嵌真实数据的自包含 HTML

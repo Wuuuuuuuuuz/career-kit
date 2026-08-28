@@ -27,7 +27,14 @@ class TaskStatus(str):
 
 
 class Task(BaseModel):
-    """任务模型。产品不规划时间：任务只有顺序和状态，快慢由用户掌握。"""
+    """任务模型。产品不规划时间：任务只有顺序和状态，快慢由用户掌握。
+
+    打卡点（BUG-004）：checkin_mode 由详细路线 LLM 设计——
+    - once: 一次性完成（默认）
+    - daily: 按天打卡（checkin_goal = 需要打卡的天数）
+    - percent: 按比例打卡（checkin_goal = 目标比例，如 80）
+    checkin_progress 记录当前进度（daily 累加天数 / percent 累加比例）。
+    """
     id: str
     name: str
     description: str = ""
@@ -37,6 +44,9 @@ class Task(BaseModel):
     priority: str = "medium"  # high | medium | low
     started_at: str | None = None
     completed_at: str | None = None
+    checkin_mode: str = ""  # once | daily | percent（空 = once）
+    checkin_goal: float = 0  # daily: 目标天数；percent: 目标比例（如 80 表示 80%）
+    checkin_progress: float = 0  # 当前累计（daily: 已打卡天数；percent: 已完成比例）
 
     def start(self) -> None:
         """开始任务。"""
@@ -62,6 +72,7 @@ class CheckIn(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     status: str = TaskStatus.COMPLETED
     notes: str = ""
+    amount: float = 0  # 本次打卡量（daily: 1 天；percent: 本次完成比例）
 
 
 class Adjustment(BaseModel):
